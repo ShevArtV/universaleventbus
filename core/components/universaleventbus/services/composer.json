@@ -1,0 +1,15 @@
+{
+  "autoload": {
+    "psr-4": {
+      "UniversalEventBus\\Services\\": "custom/"
+    }
+  },
+  "config": {
+    "platform": {
+      "php": "7.4.33"
+    }
+  },
+  "require": {
+    "jaybizzle/crawler-detect": "^1.3"
+  }
+}
