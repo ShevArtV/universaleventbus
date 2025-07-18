@@ -15,7 +15,7 @@ $modxRoot = $root;
 
 $buildConfig = array(
     //Name for displaying and category name
-    "real_package_name" => "universalEventBus",
+    "real_package_name" => "UniversalEventBus",
     //name for folder
     "package_name" => "universaleventbus",
     "package_version" => "1.0.0",
