@@ -65,6 +65,7 @@ class EventBus
      */
     public ?\miniShop2 $miniShop2 = null;
     public array $webConfig;
+    public string $branch;
 
     /**
      * @param \modX $modx
@@ -82,6 +83,7 @@ class EventBus
      */
     private function initialize()
     {
+        $this->branch = $this->properties['branch'] ?: session_id();
         $this->debug = $this->modx->getOption('ueb_debug', null, false);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
         $this->logging = new Logging($this->debug);
@@ -95,6 +97,7 @@ class EventBus
         }
 
         $this->modx->invokeEvent('OnUebInit', [
+            'branch' => $this->branch,
             'EventBus' => &$this
         ]);
     }
@@ -105,7 +108,7 @@ class EventBus
      */
     public function loadJS(int $templateId)
     {
-        $allowedTemplates = $this->modx->getOption('ueb_allowed_templates', null, 'getUserId');
+        $allowedTemplates = $this->modx->getOption('ueb_allowed_templates', null, '');
         $allowedTemplates = $allowedTemplates ? explode(',', $allowedTemplates) : [];
         if (!empty($allowedTemplates) && !in_array($templateId, $allowedTemplates)) {
             return;
@@ -162,7 +165,7 @@ class EventBus
      * @param $eventName
      * @return void
      */
-    public function handleEvent($eventName)
+    public function handleEvent(string $eventName)
     {
         $this->modx->invokeEvent('OnBeforeUebHandleEvent', [
             'dispatch' => $this->dispatch,

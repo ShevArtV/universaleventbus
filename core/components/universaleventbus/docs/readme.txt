@@ -60,6 +60,8 @@ document.addEventListener('eventbus', (event) => {
 Вы можете изменить данные перед отправкой в очередь в плагине: $EventBus->output = [];
 Вы можете изменить данные товара в плагине: $EventBus->product = [];
 Вы можете изменить конфигурации фронтенда в плагине: $EventBus->webConfig = [];
+Вы можете изменить получателя в плагине: $EventBus->branch = 'branch_name';
+Вы можете изменить получателя при инициализации: $EventBus = new EventBus($modx, ['branch' => 'branch_name']);
 
 --------------------
 GitHub: https://github.com/ShevArtV/universaleventbus

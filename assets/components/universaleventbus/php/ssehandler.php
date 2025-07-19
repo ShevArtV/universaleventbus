@@ -27,7 +27,7 @@ if (!file_exists($path)) {
     echo 'data: {"error":"File `autoload.php` not found"}' . "\n\n";
 }
 require_once $path;
-$EventBus = new EventBus($modx);
+$EventBus = new EventBus($modx, ['onReading' => true]);
 
 /**
  * @param array $messages
@@ -42,6 +42,6 @@ function sendMessages(array $messages): void
     }
 }
 
-if ($messages = $EventBus->queuemanager->getMessages(session_id())) {
+if ($messages = $EventBus->queuemanager->getMessages($EventBus->branch)) {
     sendMessages($messages);
 }

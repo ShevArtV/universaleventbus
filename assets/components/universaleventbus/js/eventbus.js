@@ -1,6 +1,6 @@
-class Eventbus {
+class EventBus {
   constructor() {
-    if (window.Eventbus) return window.Eventbus;
+    if (window.EventBus) return window.EventBus;
     this.config = {
       eventAttr: 'data-ueb-event',
       eventKey: 'uebEvent',
@@ -88,16 +88,22 @@ class Eventbus {
         break;
       }
     });
+
+    window.EventBus = this;
   }
 
-  async sendEvent(target) {
-    const eventName = target.dataset[this.config.eventKey];
-    if (!eventName) {
+  async sendEvent(target, paramsObj = {}) {
+    if(!paramsObj.eventName){
+      paramsObj.eventName = target.dataset[this.config.eventKey];
+    }
+
+    if (!paramsObj.eventName) {
       return;
     }
     const params = this.getParams(target);
-    if (!params.has('eventName')) {
-      params.append('eventName', eventName);
+    for(let [key, value] of Object.entries(paramsObj)){
+      console.log(key, value);
+      params.append(key, value);
     }
 
     if (!document.dispatchEvent(new CustomEvent(this.config.beforeSendEvent, {
@@ -121,6 +127,8 @@ class Eventbus {
     if (result.success && target.dataset[this.config.onceKey]) {
       target.removeAttribute(this.config.eventAttr);
     }
+
+    return result;
   }
 
   getParams(target) {
@@ -137,4 +145,4 @@ class Eventbus {
 
 }
 
-new Eventbus();
+new EventBus();
