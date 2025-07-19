@@ -64,6 +64,7 @@ class EventBus
      * @var \miniShop2|null
      */
     public ?\miniShop2 $miniShop2 = null;
+    public array $webConfig;
 
     /**
      * @param \modX $modx
@@ -104,7 +105,7 @@ class EventBus
      */
     public function loadJS(int $templateId)
     {
-        $allowedTemplates = $this->modx->getOption('ueb_allowed_templates', null, '');
+        $allowedTemplates = $this->modx->getOption('ueb_allowed_templates', null, 'getUserId');
         $allowedTemplates = $allowedTemplates ? explode(',', $allowedTemplates) : [];
         if (!empty($allowedTemplates) && !in_array($templateId, $allowedTemplates)) {
             return;
@@ -113,14 +114,24 @@ class EventBus
         $indexJS = $this->modx->getOption('ueb_frontend_js', '', '');
         $packageVersion = $this->getPackageVersion();
         $scriptsVersion = $packageVersion ? '?v=' . md5($packageVersion) : '';
+        $openClasses = $this->modx->getOption('ueb_open_classes', '', '');
+        $closeClasses = $this->modx->getOption('ueb_open_classes', '', '');
         //$scriptsVersion = '?v=' . time();
 
-        $webConfig = [
+        $this->webConfig = [
             'version' => $scriptsVersion,
             'handlerPath' => $this->modx->getOption('ueb_sse_handler_path', '', '/assets/components/universaleventbus/php/ssehandler.php'),
+            'actionUrl' => $this->modx->getOption('ueb_action_url', '', '/assets/components/universaleventbus/php/action.php'),
+            'openClasses' => explode(',', $openClasses),
+            'closeClasses' => explode(',', $closeClasses),
         ];
 
-        $webConfig = json_encode($webConfig, JSON_UNESCAPED_UNICODE);
+        $this->modx->invokeEvent('OnGetUebWebConfig', [
+            'webConfig' => $this->webConfig,
+            'object' => $this
+        ]);
+
+        $webConfig = json_encode($this->webConfig, JSON_UNESCAPED_UNICODE);
         if ($indexJS) {
             $indexJS .= $scriptsVersion;
             $this->modx->regClientScript(
@@ -134,7 +145,7 @@ class EventBus
     /**
      * @return string
      */
-    private function getPackageVersion()
+    private function getPackageVersion(): string
     {
         $q = $this->modx->newQuery('transport.modTransportPackage');
         $q->select('signature');
@@ -256,19 +267,25 @@ class EventBus
      */
     private function getPageData(): array
     {
-        if (!$this->modx->resource) {
-            $uri = preg_replace('#^https?://[^/]+/#', '', $_SERVER['HTTP_REFERER']);
-        } else {
-            $uri = preg_replace('#^/#', '', $_SERVER['REQUEST_URI']);
-        }
-        $where = [
-            'uri' => $uri,
-            'context_key' => $this->ctx
-        ];
-        if (!$uri) {
+        if(isset($this->properties['rid'])){
             $where = [
-                'id' => $this->modx->getContext($this->ctx)->getOption('site_start')
+                'id' => $this->properties['rid']
             ];
+        }else{
+            if (!$this->modx->resource) {
+                $uri = preg_replace('#^https?://[^/]+/#', '', $_SERVER['HTTP_REFERER']);
+            } else {
+                $uri = preg_replace('#^/#', '', $_SERVER['REQUEST_URI']);
+            }
+            $where = [
+                'uri' => $uri,
+                'context_key' => $this->ctx
+            ];
+            if (!$uri) {
+                $where = [
+                    'id' => $this->modx->getContext($this->ctx)->getOption('site_start')
+                ];
+            }
         }
 
         $resourceData = $this->getResourceData($where);
