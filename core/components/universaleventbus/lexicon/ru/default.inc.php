@@ -17,7 +17,5 @@ $_lang['setting_ueb_frontend_js_desc'] = '';
 $_lang['area_ueb_main'] = 'Основные настройки';
 $_lang['setting_ueb_sse_retry'] = 'Частота опроса сервера';
 $_lang['setting_ueb_sse_retry_desc'] = 'указывается в милисекундах.';
-$_lang['setting_ueb_data_param_name'] = 'Название параметра с данными';
-$_lang['setting_ueb_data_param_name_desc'] = 'по умолчанию dataLayer';
 $_lang['setting_ueb_allowed_templates'] = 'Шаблоны в которых необходимо использовать шину событий';
 $_lang['setting_ueb_allowed_templates_desc'] = 'если пусто, то во всех шаблонах';

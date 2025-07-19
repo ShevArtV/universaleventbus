@@ -118,7 +118,6 @@ class EventBus
         $webConfig = [
             'version' => $scriptsVersion,
             'handlerPath' => $this->modx->getOption('ueb_sse_handler_path', '', '/assets/components/universaleventbus/php/ssehandler.php'),
-            'dataParamName' => $this->modx->getOption('ueb_data_param_name', '', 'dataLayer'),
         ];
 
         $webConfig = json_encode($webConfig, JSON_UNESCAPED_UNICODE);
@@ -170,7 +169,9 @@ class EventBus
             'userData' => $this->getUserData($this->getUserId()),
             'pageData' => $this->getPageData(),
             'orderData' => $this->getOrderData(),
+            'cartData' => $this->getCartData(),
             'productsData' => $this->getProductsData(),
+            'pushed' => []
         ];
 
         $this->modx->invokeEvent('OnUebHandleEvent', [
@@ -206,7 +207,7 @@ class EventBus
      * @param string $eventName
      * @return string
      */
-    private function getEventId(string $eventName): string
+    public function getEventId(string $eventName): string
     {
         return md5($eventName . time());
     }
@@ -293,6 +294,8 @@ class EventBus
         if ($this->miniShop2 instanceof \miniShop2) {
             $q->leftJoin('msProductData', 'Data', 'modResource.id = Data.id');
             $q->select($this->modx->getSelectColumns('msProductData', 'Data', '', ['id'], true));
+            $q->leftJoin('msVendor', 'Vendor', 'Data.vendor = Vendor.id');
+            $q->select($this->modx->getSelectColumns('msVendor', 'Vendor', 'vendor_'));
         }
         $q->where($where);
 
@@ -334,6 +337,18 @@ class EventBus
             $this->logging->write(__METHOD__ . ':' . __LINE__, 'orderData: ', $orderData);
         }
         return $this->filterArray($orderData);
+    }
+
+    private function getCartData(): array
+    {
+        if (!($this->miniShop2 instanceof \miniShop2)) {
+            return [];
+        }
+
+        return [
+            'products' =>$this->miniShop2->cart->get(),
+            'status' => $this->miniShop2->cart->status()
+        ];
     }
 
     /**
@@ -391,17 +406,17 @@ class EventBus
     {
         $data = $this->getResourceData(['id' => ($product['product_id'] ?: $product['id'])]);
         $product = array_merge($data, $product);
-        $product['cost'] = $product['cost'] * $product['count'];
+        $product['cost'] = $product['price'] * $product['count'];
 
         $this->product = [
             'id' => $product['id'],
             'name' => $product['pagetitle'],
             'price' => $product['price'],
-            'old_price' => $product['old_price'],
             'count' => $product['count'],
             'weight' => $product['weight'],
             'cost' => $product['cost'],
             'url' => $product['url'],
+            'vendor' => $product['vendor_name'],
             'options' => $product['options'],
         ];
 

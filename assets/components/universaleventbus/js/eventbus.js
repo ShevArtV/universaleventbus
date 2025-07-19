@@ -12,22 +12,15 @@ class Eventbus {
         console.warn(data.error);
         this.eventSource.close();
       } else {
-        if (!document.dispatchEvent(new CustomEvent('eventbus', {
-          bubbles: true,
-          cancelable: true,
+        document.dispatchEvent(new CustomEvent('eventbus', {
+          bubbles: false,
+          cancelable: false,
           detail: {
             data: data,
           }
-        }))) {
-          return;
-        }
-
-        if(typeof window[window.uebConfig.dataParamName] === 'undefined') {
-          window[window.uebConfig.dataParamName] = [];
-        }
-        data.pushed && window[window.uebConfig.dataParamName].push(data.pushed);
+        }));
       }
-    }
+    };
   }
 }
 
