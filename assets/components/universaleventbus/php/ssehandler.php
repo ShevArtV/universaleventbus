@@ -20,7 +20,7 @@ $modx->setLogLevel(\modX::LOG_LEVEL_ERROR);
 $retry = $modx->getOption('ueb_sse_retry', null, 5000);
 $autoloadPath = $modx->getOption('ueb_autoload_path', null, '/core/components/universaleventbus/services/vendor/autoload.php');
 
-echo "retry: " . $retry . "\n\n";
+echo "retry: " . $retry . "\n\n";$modx->log(1, print_r($messages, 1));
 
 $path = $basePath . $autoloadPath;
 if (!file_exists($path)) {

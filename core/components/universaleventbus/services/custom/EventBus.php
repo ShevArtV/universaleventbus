@@ -25,6 +25,10 @@ class EventBus
      */
     private ?array $properties;
     /**
+     * @var array
+     */
+    public array $replacements = [];
+    /**
      * @var bool
      */
     private bool $isBot = false;
@@ -64,7 +68,13 @@ class EventBus
      * @var \miniShop2|null
      */
     public ?\miniShop2 $miniShop2 = null;
+    /**
+     * @var array
+     */
     public array $webConfig;
+    /**
+     * @var string
+     */
     public string $branch;
 
     /**
@@ -118,7 +128,7 @@ class EventBus
         $packageVersion = $this->getPackageVersion();
         $scriptsVersion = $packageVersion ? '?v=' . md5($packageVersion) : '';
         $openClasses = $this->modx->getOption('ueb_open_classes', '', '');
-        $closeClasses = $this->modx->getOption('ueb_open_classes', '', '');
+        $closeClasses = $this->modx->getOption('ueb_close_classes', '', '');
         //$scriptsVersion = '?v=' . time();
 
         $this->webConfig = [
@@ -194,7 +204,7 @@ class EventBus
         ]);
 
         if ($this->dispatch) {
-            $this->queuemanager->addToQueue(session_id(), $this->output);
+            $this->queuemanager->addToQueue($this->branch, $this->output);
         }
     }
 
@@ -270,30 +280,53 @@ class EventBus
      */
     private function getPageData(): array
     {
-        if(isset($this->properties['rid'])){
-            $where = [
-                'id' => $this->properties['rid']
-            ];
-        }else{
-            if (!$this->modx->resource) {
-                $uri = preg_replace('#^https?://[^/]+/#', '', $_SERVER['HTTP_REFERER']);
-            } else {
-                $uri = preg_replace('#^/#', '', $_SERVER['REQUEST_URI']);
-            }
-            $where = [
-                'uri' => $uri,
-                'context_key' => $this->ctx
-            ];
-            if (!$uri) {
-                $where = [
-                    'id' => $this->modx->getContext($this->ctx)->getOption('site_start')
-                ];
-            }
+        if (!$where = $this->getConditionsForGetResourceData()) {
+            $this->dispatch = false;
+            return [];
         }
 
         $resourceData = $this->getResourceData($where);
         $this->dispatch = isset($resourceData['id']);
         return $this->filterArray($resourceData);
+    }
+
+
+    /**
+     * @return array
+     */
+    private function getConditionsForGetResourceData(): array
+    {
+        $extension = pathinfo($_SERVER['REQUEST_URI'], PATHINFO_EXTENSION);
+        if (isset($this->properties['rid'])) {
+            return [
+                'id' => $this->properties['rid']
+            ];
+        } elseif (isset($this->properties['uri'])) {
+            $uri = ltrim($this->properties['uri'], '/');
+            return [
+                'uri' => $uri,
+                'context_key' => $this->ctx
+            ];
+        } elseif ($this->modx->resource && in_array($extension, ['html', ''])) {
+            return [
+                'id' => $this->modx->resource->id
+            ];
+        } elseif ($extension === 'php') {
+            $uri = parse_url($_SERVER['HTTP_REFERER']);
+            $uri = $uri['path'];
+            $uri = ltrim($uri, '/');
+            if (!$uri) {
+                return [
+                    'id' => $this->modx->getContext($this->ctx)->getOption('site_start')
+                ];
+            }
+            return [
+                'uri' => $uri,
+                'context_key' => $this->ctx
+            ];
+        }
+
+        return [];
     }
 
     /**
@@ -359,15 +392,31 @@ class EventBus
         return $this->filterArray($orderData);
     }
 
+    /**
+     * @return array
+     */
     private function getCartData(): array
     {
         if (!($this->miniShop2 instanceof \miniShop2)) {
             return [];
         }
-
+        $cart = $this->miniShop2->cart->get();
+        $item = $cart[$this->properties['key']] ?? [];
+        $oldCount = $_SESSION['ueb']['cart'][$this->properties['key']]['count'] ?? 0;
+        if ($oldCount - $item['count'] > 0) {
+            $item['count_change'] = 'decrease';
+        }
+        if ($oldCount - $item['count'] < 0) {
+            $item['count_change'] = 'increase';
+        }
+        if ($oldCount === $item['count']) {
+            $item['count_change'] = 'none';
+        }
+        $_SESSION['ueb']['cart'] = $cart;
         return [
-            'products' =>$this->miniShop2->cart->get(),
-            'status' => $this->miniShop2->cart->status()
+            'products' => $cart,
+            'status' => $this->miniShop2->cart->status(),
+            'item' => $item
         ];
     }
 
@@ -450,10 +499,11 @@ class EventBus
 
     /**
      * @param string $sql
+     * @param string|null $method
      * @param array $fetchType
      * @return array
      */
-    private function execute(string $sql, array $fetchType = [\PDO::FETCH_ASSOC]): array
+    public function execute(string $sql, ?string $method = 'fetch', array $fetchType = [\PDO::FETCH_ASSOC]): array
     {
         $tstart = microtime(true);
         $sql = preg_replace('/^SELECT/', 'SELECT SQL_CALC_FOUND_ROWS', $sql);
@@ -461,8 +511,7 @@ class EventBus
         if ($stmt->execute()) {
             $this->modx->queryTime += microtime(true) - $tstart;
             $this->modx->executedQueries++;
-            $output = $stmt->fetchAll(implode('|', $fetchType));
-            return count($output) === 1 ? $output[0] : $output;
+            return $stmt->$method(implode('|', $fetchType)) ?: [];
         }
         return [];
     }
@@ -471,7 +520,7 @@ class EventBus
      * @param \xPDOQuery $q
      * @return string
      */
-    private function getSQL(\xPDOQuery $q): string
+    public function getSQL(\xPDOQuery $q): string
     {
         $q->prepare();
         $sql = $q->toSQL();

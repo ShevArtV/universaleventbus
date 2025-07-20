@@ -102,7 +102,6 @@ class EventBus {
     }
     const params = this.getParams(target);
     for(let [key, value] of Object.entries(paramsObj)){
-      console.log(key, value);
       params.append(key, value);
     }
 
