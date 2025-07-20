@@ -15,6 +15,8 @@ class EventBus {
     };
     this.config = Object.assign(this.config, window.uebConfig);
     this.initialize();
+
+    window.EventBus = this;
   }
 
   initialize() {
@@ -88,8 +90,6 @@ class EventBus {
         break;
       }
     });
-
-    window.EventBus = this;
   }
 
   async sendEvent(target, paramsObj = {}) {

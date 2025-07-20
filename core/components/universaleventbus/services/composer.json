@@ -1,7 +1,7 @@
 {
   "autoload": {
     "psr-4": {
-      "UniversalEventBus\\Services\\": "custom/"
+      "UniversalEventBus\\": "custom/"
     }
   },
   "config": {

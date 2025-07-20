@@ -6,6 +6,6 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
-    'UniversalEventBus\\Services\\' => array($baseDir . '/custom'),
+    'UniversalEventBus\\' => array($baseDir . '/custom'),
     'Jaybizzle\\CrawlerDetect\\' => array($vendorDir . '/jaybizzle/crawler-detect/src'),
 );

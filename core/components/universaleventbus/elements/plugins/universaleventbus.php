@@ -6,7 +6,7 @@
  * @var array $scriptProperties
  */
 
-use UniversalEventBus\Services\EventBus;
+use UniversalEventBus\EventBus;
 
 $basePath = $modx->getOption('base_path', null, $_SERVER['DOCUMENT_ROOT'] . '/');
 require_once $basePath . 'core/components/universaleventbus/services/vendor/autoload.php';

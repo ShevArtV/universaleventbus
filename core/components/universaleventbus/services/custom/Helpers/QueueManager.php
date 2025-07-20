@@ -5,7 +5,7 @@
  * Для хранения очередей в БД укажите класс registry.modDbRegister.
  */
 
-namespace UniversalEventBus\Services\Helpers;
+namespace UniversalEventBus\Helpers;
 
 /**
  * @author Arthur Shevchenko (https://t.me/ShevArtV)

@@ -1,10 +1,10 @@
 <?php
 
-namespace UniversalEventBus\Services;
+namespace UniversalEventBus;
 
 
-use UniversalEventBus\Services\Helpers\Logging;
-use UniversalEventBus\Services\Helpers\QueueManager;
+use UniversalEventBus\Helpers\Logging;
+use UniversalEventBus\Helpers\QueueManager;
 use Jaybizzle\CrawlerDetect\CrawlerDetect;
 
 /**

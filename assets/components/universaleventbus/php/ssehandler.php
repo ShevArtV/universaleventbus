@@ -6,7 +6,7 @@
  * @var \modX $modx
  */
 
-use UniversalEventBus\Services\EventBus;
+use UniversalEventBus\EventBus;
 
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
@@ -20,7 +20,7 @@ $modx->setLogLevel(\modX::LOG_LEVEL_ERROR);
 $retry = $modx->getOption('ueb_sse_retry', null, 5000);
 $autoloadPath = $modx->getOption('ueb_autoload_path', null, '/core/components/universaleventbus/services/vendor/autoload.php');
 
-echo "retry: " . $retry . "\n\n";$modx->log(1, print_r($messages, 1));
+echo "retry: " . $retry . "\n\n";
 
 $path = $basePath . $autoloadPath;
 if (!file_exists($path)) {

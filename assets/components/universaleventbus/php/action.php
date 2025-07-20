@@ -6,7 +6,7 @@
  * @var array $scriptProperties
  */
 
-use UniversalEventBus\Services\EventBus;
+use UniversalEventBus\EventBus;
 
 $basePath = dirname(__FILE__, 5);
 define('MODX_API_MODE', true);

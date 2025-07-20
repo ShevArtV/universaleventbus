@@ -3,7 +3,7 @@
  * Сервис для логирования работы скриптов
  */
 
-namespace UniversalEventBus\Services\Helpers;
+namespace UniversalEventBus\Helpers;
 
 /**
  * @author Arthur Shevchenko (https://t.me/ShevArtV)

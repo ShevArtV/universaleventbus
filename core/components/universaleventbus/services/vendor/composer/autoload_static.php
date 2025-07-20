@@ -9,7 +9,7 @@ class ComposerStaticInitbefd8133f5d0dd0905c560ee1d42a4a8
     public static $prefixLengthsPsr4 = array (
         'U' => 
         array (
-            'UniversalEventBus\\Services\\' => 27,
+            'UniversalEventBus\\' => 18,
         ),
         'J' => 
         array (
@@ -18,7 +18,7 @@ class ComposerStaticInitbefd8133f5d0dd0905c560ee1d42a4a8
     );
 
     public static $prefixDirsPsr4 = array (
-        'UniversalEventBus\\Services\\' => 
+        'UniversalEventBus\\' => 
         array (
             0 => __DIR__ . '/../..' . '/custom',
         ),
