@@ -14,68 +14,91 @@ use Jaybizzle\CrawlerDetect\CrawlerDetect;
 class EventBus
 {
 
-    /** @var \modX $modx */
+    /**
+     * @var \modX $modx
+     */
     public \modX $modx;
-    /** @var Logging $logging */
+    /**
+     * @var Logging $logging
+     */
     public Logging $logging;
-    /** @var QueueManager $queuemanager */
+    /**
+     * @var QueueManager $queuemanager
+     */
     public QueueManager $queuemanager;
     /**
-     * @var array|null
+     * @var \msoptionsprice|null $msop
+     */
+    protected ?\msoptionsprice $msop;
+    /**
+     * @var array|null $properties
      */
     private ?array $properties;
     /**
-     * @var array
+     * @var array $replacements
      */
     public array $replacements = [];
     /**
-     * @var bool
+     * @var bool $isBot
      */
     private bool $isBot = false;
     /**
-     * @var array
+     * @var array $output
      */
     public array $output = [];
     /**
-     * @var array|string[]
+     * @var array|string[] $cacheOptions
      */
     private array $cacheOptions = [\xPDO::OPT_CACHE_KEY => 'eventbus'];
     /**
-     * @var int
+     * @var int $cacheExpireTime
      */
     private int $cacheExpireTime = 86400;
     /**
-     * @var string
+     * @var string $ctx
      */
     public string $ctx = 'web';
     /**
-     * @var bool
+     * @var bool $debug
      */
     private bool $debug;
     /**
-     * @var bool
+     * @var bool $useCache
      */
     private bool $useCache;
     /**
-     * @var bool
+     * @var bool $dispatch
      */
     public bool $dispatch = true;
     /**
-     * @var mixed
+     * @var mixed $product
      */
     public array $product = [];
     /**
-     * @var \miniShop2|null
+     * @var \miniShop2|null $miniShop2
      */
     public ?\miniShop2 $miniShop2 = null;
     /**
-     * @var array
+     * @var array $webConfig
      */
     public array $webConfig;
     /**
-     * @var string
+     * @var string $branch
      */
     public string $branch;
+    /**
+     * @var string $contextCookieName
+     */
+    private string $contextCookieName = 'ueb_context';
+    /**
+     * @var string $requestContextParam
+     */
+    private string $requestContextParam = 'ctx';
+
+    /**
+     * @var array $translit
+     */
+    private array $translit;
 
     /**
      * @param \modX $modx
@@ -93,14 +116,21 @@ class EventBus
      */
     private function initialize()
     {
+        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $this->modx->context->get('key');
+        if ($this->ctx !== $this->modx->context->get('key')) {
+            $this->modx->switchContext($this->ctx);
+        }
+
         $this->branch = $this->properties['branch'] ?: session_id();
         $this->debug = $this->modx->getOption('ueb_debug', null, false);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
+        $translit = $this->modx->getOption('ueb_translit', null, '');
+        $this->translit = $translit ? explode(',', $translit) : [];
         $this->logging = new Logging($this->debug);
         $this->queuemanager = new QueueManager($this->modx);
         $crawlerDetect = new CrawlerDetect;
         $this->isBot = $crawlerDetect->isCrawler();
-        $this->ctx = $this->modx->context->get('key');
+        $this->msop = $this->setMsOptionPrice();
         $this->miniShop2 = $this->modx->getService('miniShop2');
         if ($this->miniShop2 && !$this->miniShop2->initialized[$this->ctx]) {
             $this->miniShop2->initialize($this->ctx);
@@ -110,6 +140,49 @@ class EventBus
             'branch' => $this->branch,
             'EventBus' => &$this
         ]);
+    }
+
+    /**
+     * @return object|null
+     */
+    private function setMsOptionPrice(): ?object
+    {
+        $corePath = $this->modx->getOption(
+            'msoptionsprice_core_path',
+            null,
+            $this->modx->getOption('core_path', null, MODX_CORE_PATH) . 'components/msoptionsprice/'
+        );
+
+        $msoptionsprice = $this->modx->getService(
+            'msoptionsprice',
+            'msoptionsprice',
+            $corePath . 'model/msoptionsprice/',
+            array('core_path' => $corePath)
+        );
+        if (!$msoptionsprice) {
+            return null;
+        }
+        $msoptionsprice->initialize($this->ctx, []);
+        return $msoptionsprice;
+    }
+
+    /**
+     * @return void
+     */
+    public function setContextCookie()
+    {
+        $expirationTime = time() + (30 * 24 * 60 * 60);
+        $q = $this->modx->newQuery('modContextSetting');
+        $q->select('value');
+        $q->where(['key' => 'http_host', 'context_key' => 'web']);
+        $q->prepare();
+        if (!$host = $this->execute($q, [\PDO::FETCH_COLUMN])[0]) {
+            $host = $this->modx->getOption('http_host'); // получаем хост текущего контекста
+        }
+        if ($q->stmt->execute()) { // если в контексте web есть настройка http_host, то предполагается, что это базовый хост, а в других контекстах поддомены
+            $host = $q->stmt->fetchColumn();
+        }
+        setcookie($this->contextCookieName, $this->modx->context->key, $expirationTime, '/', '.' . $host);
     }
 
     /**
@@ -172,7 +245,7 @@ class EventBus
     }
 
     /**
-     * @param $eventName
+     * @param string $eventName
      * @return void
      */
     public function handleEvent(string $eventName)
@@ -197,6 +270,10 @@ class EventBus
             'productsData' => $this->getProductsData(),
             'pushed' => []
         ];
+
+        if (empty($this->output['productsData']) && $this->output['pageData']['class_key'] === 'msProduct') {
+            $this->output['productsData'] = [$this->getProductData($this->output['pageData'])];
+        }
 
         $this->modx->invokeEvent('OnUebHandleEvent', [
             'output' => $this->output,
@@ -287,6 +364,11 @@ class EventBus
 
         $resourceData = $this->getResourceData($where);
         $this->dispatch = isset($resourceData['id']);
+        if ($this->msop && $resourceData['class_key'] === 'msProduct') {
+            $resourceData['modification'] = (int)$_REQUEST['mid'];
+            $resourceData['options'] = $_REQUEST['options'] ?: [];
+            $resourceData['variant'] = $this->getProductVariant($resourceData);
+        }
         return $this->filterArray($resourceData);
     }
 
@@ -297,6 +379,7 @@ class EventBus
     private function getConditionsForGetResourceData(): array
     {
         $extension = pathinfo($_SERVER['REQUEST_URI'], PATHINFO_EXTENSION);
+        $extension = explode('?', $extension)[0];
         if (isset($this->properties['rid'])) {
             return [
                 'id' => $this->properties['rid']
@@ -331,9 +414,11 @@ class EventBus
 
     /**
      * @param array $where
+     * @param string|null $fetchMethod
      * @return array
      */
-    private function getResourceData(array $where): array
+
+    public function getResourceData(array $where, ?string $fetchMethod = 'fetch'): array
     {
         $hash = md5(json_encode($where));
         if ($this->useCache && $output = $this->modx->cacheManager->get($hash, $this->cacheOptions)) {
@@ -343,7 +428,7 @@ class EventBus
         $q = $this->modx->newQuery('modResource');
         $q->select($this->modx->getSelectColumns('modResource', 'modResource'));
         $q->leftJoin('modResource', 'Category', 'modResource.parent = Category.id');
-        $q->select('Category.pagetitle as parent_pagetitle');
+        $q->select('Category.pagetitle as category');
         if ($this->miniShop2 instanceof \miniShop2) {
             $q->leftJoin('msProductData', 'Data', 'modResource.id = Data.id');
             $q->select($this->modx->getSelectColumns('msProductData', 'Data', '', ['id'], true));
@@ -351,9 +436,15 @@ class EventBus
             $q->select($this->modx->getSelectColumns('msVendor', 'Vendor', 'vendor_'));
         }
         $q->where($where);
+        if ($output = $this->execute($this->getSQL($q), $fetchMethod)) {
+            if ($fetchMethod === 'fetchAll') {
+                foreach ($output as $k => $v) {
+                    $output[$k]['url'] = $this->modx->makeUrl($v['id'], $this->ctx, '', 'full');
+                }
+            } else {
+                $output['url'] = $this->modx->makeUrl($output['id'], $this->ctx, '', 'full');
+            }
 
-        if ($output = $this->execute($this->getSQL($q))) {
-            $output['url'] = $this->modx->makeUrl($output['id'], $this->ctx, '', 'full');
             $this->modx->cacheManager->set($hash, $output, $this->cacheExpireTime, $this->cacheOptions);
             if ($this->debug) {
                 $this->logging->write(__METHOD__ . ':' . __LINE__, 'resourceData: ', $output);
@@ -477,6 +568,10 @@ class EventBus
         $product = array_merge($data, $product);
         $product['cost'] = $product['price'] * $product['count'];
 
+        if ($this->msop && empty($product['variant'])) {
+            $product['variant'] = $this->getProductVariant($product);
+        }
+
         $this->product = [
             'id' => $product['id'],
             'name' => $product['pagetitle'],
@@ -486,15 +581,110 @@ class EventBus
             'cost' => $product['cost'],
             'url' => $product['url'],
             'vendor' => $product['vendor_name'],
+            'category' => $product['category'],
             'options' => $product['options'],
+            'variant' => $product['variant'],
+            'position' => $product['menuindex'],
         ];
 
-        $this->modx->invokeEvent('OnUebGetProductsData', [
+        $this->modx->invokeEvent('OnUebGetProductData', [
             'product' => $this->product,
             'EventBus' => &$this
         ]);
 
+        if(!empty($this->translit)){
+            foreach ($this->translit as $key) {
+                $path = explode('_', $key);
+                $target = &$this->product;
+
+                foreach ($path as $segment) {
+                    $target = &$target[$segment];
+                }
+
+                $target = $this->getTranslitString($target);
+                unset($target);
+            }
+        }
+
         return $this->product;
+    }
+
+    private function getProductVariant(array $product): array
+    {
+        $output = [];
+        $modificationId = $product['modification'] ?: $product['options']['modification'];
+        if ($modificationId) {
+            $output = $this->getModificationById($modificationId);
+        }
+        if (isset($product['options'])) {
+            $output = $this->getModificationByOptions($product);
+        }
+
+        return $this->filterArray($output);
+    }
+
+    /**
+     * @param int $id
+     * @return array
+     */
+    public function getModificationById(int $id): array
+    {
+        $hash = md5('msopModification' . $id);
+        if ($this->useCache && $output = $this->modx->cacheManager->get($hash, $this->cacheOptions)) {
+            return $output;
+        }
+        $q = $this->modx->newQuery('msopModification');
+        $q->select($this->modx->getSelectColumns('msopModification', 'msopModification'));
+        $q->where(['id' => $id]);
+        if ($output = $this->execute($this->getSQL($q))) {
+            $this->modx->cacheManager->set($hash, $output, $this->cacheExpireTime, $this->cacheOptions);
+            return $output;
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array $data
+     * @return array
+     */
+    public function getModificationByOptions(array $data): array
+    {
+        if (!$this->msop) {
+            return [];
+        }
+        $productId = $data['product_id'] ?: $data['id'];
+        $hash = md5(strtolower($productId . serialize($data['options'])));
+        if ($this->useCache && $output = $this->modx->cacheManager->get($hash, $this->cacheOptions)) {
+            return $output;
+        }
+        $excludeIds = array(0);
+        $excludeType = array(0, 2, 3);
+        if (!is_array($data['options'])) {
+            $data['options'] = json_decode($data['options'], true);
+        }
+        if (!$modification = $this->msop->getModificationByOptions($productId, $data['options'], null, $excludeIds, $excludeType)) {
+            return [];
+        }
+
+        $this->modx->cacheManager->set($hash, $modification, $this->cacheExpireTime, $this->cacheOptions);
+        return $modification;
+    }
+
+    /**
+     * @param string|null $string
+     * @return string
+     */
+    private function getTranslitString(?string $string): string
+    {
+        if (!$string) {
+            return '';
+        }
+
+        $r = $this->modx->newObject('modResource');
+        $string = $r->cleanAlias($string);
+        unset($r);
+        return $string;
     }
 
     /**
@@ -544,6 +734,9 @@ class EventBus
      */
     private function filterArray(array $array): array
     {
+        if (empty($array)) {
+            return [];
+        }
         return array_diff($array, [null, false, '', 0]);
     }
 

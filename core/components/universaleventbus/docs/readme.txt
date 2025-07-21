@@ -63,5 +63,8 @@ document.addEventListener('eventbus', (event) => {
 Вы можете изменить получателя в плагине: $EventBus->branch = 'branch_name';
 Вы можете изменить получателя при инициализации: $EventBus = new EventBus($modx, ['branch' => 'branch_name']);
 
+Для того, чтобы в данных была информация о модификациях, нужно передать на сервер id модификации в параметре mid
+или опции в параметре options, по которым можно получить модификацию.
+
 --------------------
 GitHub: https://github.com/ShevArtV/universaleventbus

@@ -10,6 +10,8 @@ use UniversalEventBus\EventBus;
 
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
+header('Connection: keep-alive');
+ob_implicit_flush();
 
 $basePath = dirname(__FILE__, 5);
 define('MODX_API_MODE', true);

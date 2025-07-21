@@ -23,10 +23,7 @@ class EventBus {
     this.eventSource = new EventSource(this.config.handlerPath);
     this.eventSource.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.error) {
-        console.warn(data.error);
-        this.eventSource.close();
-      } else {
+      if (data) {
         document.dispatchEvent(new CustomEvent(this.config.dispatchEvent, {
           bubbles: false, cancelable: false, detail: {
             data: data,
@@ -48,7 +45,6 @@ class EventBus {
       });
     }, this.config.intersectionObserverOptions);
 
-
     const mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'class' && mutation.target.hasAttribute(this.config.eventAttr)) {
@@ -67,7 +63,6 @@ class EventBus {
         }
       });
     });
-
 
     eventTargets.forEach((target) => {
       const eventName = target.dataset[this.config.eventKey];
@@ -93,7 +88,7 @@ class EventBus {
   }
 
   async sendEvent(target, paramsObj = {}) {
-    if(!paramsObj.eventName){
+    if (!paramsObj.eventName) {
       paramsObj.eventName = target.dataset[this.config.eventKey];
     }
 
@@ -101,7 +96,7 @@ class EventBus {
       return;
     }
     const params = this.getParams(target);
-    for(let [key, value] of Object.entries(paramsObj)){
+    for (let [key, value] of Object.entries(paramsObj)) {
       params.append(key, value);
     }
 

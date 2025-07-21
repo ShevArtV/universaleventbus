@@ -25,3 +25,5 @@ $_lang['setting_ueb_open_classes'] = 'Список классов обознач
 $_lang['setting_ueb_open_classes_desc'] = 'через запятую';
 $_lang['setting_ueb_close_classes'] = 'Список классов обозначающих закрытый элемент';
 $_lang['setting_ueb_close_classes_desc'] = 'через запятую';
+$_lang['setting_ueb_translit'] = 'Список ключей товара для транслитерации';
+$_lang['setting_ueb_translit_desc'] = 'доступны: name, vendor, category, options_*, variant_*, variant_options_*';
