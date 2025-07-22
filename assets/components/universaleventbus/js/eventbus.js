@@ -48,18 +48,14 @@ class EventBus {
     const mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'class' && mutation.target.hasAttribute(this.config.eventAttr)) {
-          const classList = Array.from(mutation.target.classList);
-          const openIntersection = classList.filter(item => this.config.openClasses.includes(item));
-          const closeIntersection = classList.filter(item => this.config.closeClasses.includes(item));
           const target = mutation.target;
 
-          if (openIntersection.length || !closeIntersection.length) {
-            target.setAttribute(this.config.eventAttr, 'open');
+          if(this.checkClasses(target, this.config.openClasses)) {
+            this.sendEvent(mutation.target);
           }
-          if (!openIntersection.length || closeIntersection.length) {
-            target.setAttribute(this.config.eventAttr, 'close');
+          if(this.checkClasses(target, this.config.closeClasses)) {
+            this.sendEvent(mutation.target);
           }
-          this.sendEvent(mutation.target);
         }
       });
     });
@@ -87,15 +83,24 @@ class EventBus {
     });
   }
 
-  async sendEvent(target, paramsObj = {}) {
-    if (!paramsObj.eventName) {
-      paramsObj.eventName = target.dataset[this.config.eventKey];
+  checkClasses(target, classes) {
+    if(!classes.length) return false;
+    for(let i = 0; i < classes.length; i++) {
+      if(target.closest(classes[i])) {
+        return true;
+      }
     }
+    return false;
+  }
+
+  async sendEvent(target, paramsObj = {}) {
+    paramsObj.eventName = paramsObj.eventName || target.dataset[this.config.eventKey];
+    paramsObj = Object.assign(paramsObj, this.getParams(target));
 
     if (!paramsObj.eventName) {
       return;
     }
-    const params = this.getParams(target);
+    const params = new FormData();
     for (let [key, value] of Object.entries(paramsObj)) {
       params.append(key, value);
     }
@@ -118,7 +123,7 @@ class EventBus {
     const response = await fetch(this.config.actionUrl, fetchOptions);
 
     const result = await response.json();
-    if (result.success && target.dataset[this.config.onceKey]) {
+    if (result.success && target !== document && target.dataset[this.config.onceKey]) {
       target.removeAttribute(this.config.eventAttr);
     }
 
@@ -126,13 +131,14 @@ class EventBus {
   }
 
   getParams(target) {
-    const params = new FormData();
+    const params = {};
+    if(target === document) return params;
     let paramsAttrValue = target.dataset[this.config.paramsKey];
     if (!paramsAttrValue) return params;
     paramsAttrValue = paramsAttrValue.split(';');
     paramsAttrValue.forEach(param => {
       const [key, value] = param.split(':');
-      params.append(key, value);
+      params[key] = value;
     });
     return params;
   }
