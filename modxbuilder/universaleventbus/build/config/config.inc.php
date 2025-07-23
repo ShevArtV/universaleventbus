@@ -19,7 +19,7 @@ $buildConfig = array(
     //name for folder
     "package_name" => "universaleventbus",
     "package_version" => "1.2.0",
-    "package_release" => "beta2",
+    "package_release" => "beta3",
     "package_table_prefix" => "ueb_",
     "package_class_prefix" => "ueb",
 

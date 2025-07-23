@@ -504,7 +504,7 @@ class EventBus
             return [];
         }
         $cart = $this->miniShop2->cart->get();
-        $item = $cart[$this->properties['key']] ?? [];
+        $item = $cart[$this->properties['key']] ?? $_SESSION['ueb']['cart'][$this->properties['key']] ?? [];
         $oldCount = $_SESSION['ueb']['cart'][$this->properties['key']]['count'] ?? 0;
         if ($oldCount - $item['count'] > 0) {
             $item['count_change'] = 'remove';
