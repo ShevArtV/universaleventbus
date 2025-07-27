@@ -94,7 +94,7 @@ class QueueManager
      * @param $data
      * @return bool
      */
-    public function addToQueue($branch, $data): bool
+    public function addToQueue($branch, $data,  $options = []): bool
     {
         if (!$data) {
             $this->logging->write(__METHOD__, 'Data is empty');
@@ -111,7 +111,7 @@ class QueueManager
         }
 
         $this->QM->subscribe($branch);
-        $this->QM->send($branch, $data);
+        $this->QM->send($branch, $data, $options);
         $this->QM->unsubscribe($branch);
 
         return true;

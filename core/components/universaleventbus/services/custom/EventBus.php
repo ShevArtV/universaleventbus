@@ -99,6 +99,10 @@ class EventBus
      * @var array $translit
      */
     private array $translit;
+    /**
+     * @var array $options
+     */
+    public array $options = [];
 
     /**
      * @param \modX $modx
@@ -276,12 +280,13 @@ class EventBus
         }
 
         $this->modx->invokeEvent('OnUebHandleEvent', [
+            'options' => $this->options,
             'output' => $this->output,
             'EventBus' => &$this
         ]);
 
         if ($this->dispatch) {
-            $this->queuemanager->addToQueue($this->branch, $this->output);
+            $this->queuemanager->addToQueue($this->branch, $this->output, $this->options);
         }
     }
 
@@ -719,9 +724,9 @@ class EventBus
      * @param string $sql
      * @param string|null $method
      * @param array $fetchType
-     * @return array
+     * @return array|string
      */
-    public function execute(string $sql, ?string $method = 'fetch', array $fetchType = [\PDO::FETCH_ASSOC]): array
+    public function execute(string $sql, ?string $method = 'fetch', array $fetchType = [\PDO::FETCH_ASSOC])
     {
         $tstart = microtime(true);
         $sql = preg_replace('/^SELECT/', 'SELECT SQL_CALC_FOUND_ROWS', $sql);
