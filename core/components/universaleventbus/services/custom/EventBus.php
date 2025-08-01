@@ -41,7 +41,7 @@ class EventBus
     /**
      * @var bool $isBot
      */
-    private bool $isBot = false;
+    public bool $isBot = false;
     /**
      * @var array $output
      */
