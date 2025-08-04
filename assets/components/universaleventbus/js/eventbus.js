@@ -145,4 +145,6 @@ class EventBus {
 
 }
 
-new EventBus();
+document.addEventListener('DOMContentLoaded', () => {
+  new EventBus();
+});
