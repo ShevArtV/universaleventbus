@@ -89,7 +89,7 @@ class EventBus
     /**
      * @var string $contextCookieName
      */
-    private string $contextCookieName = 'ueb_context';
+    public string $contextCookieName = 'ueb_context';
     /**
      * @var string $requestContextParam
      */
