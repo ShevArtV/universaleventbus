@@ -11,7 +11,6 @@ use UniversalEventBus\EventBus;
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
 header('Connection: keep-alive');
-ob_implicit_flush();
 
 $basePath = dirname(__FILE__, 5);
 define('MODX_API_MODE', true);
@@ -37,13 +36,26 @@ $EventBus = new EventBus($modx, ['onReading' => true]);
 function sendMessages(array $messages): void
 {
     foreach ($messages as $id => $message) {
-        echo "data: " . $message . "\n\n";
         echo "id: " . $id . "\n\n";
+        echo "data: " . $message . "\n\n";
         ob_flush();
         flush();
     }
 }
+$messages = $EventBus->queuemanager->getMessages($EventBus->branch);
+$sendedIds = json_decode($_COOKIE['ueb_message_ids'], true) ?: [];
 
-if ($messages = $EventBus->queuemanager->getMessages($EventBus->branch)) {
-    sendMessages($messages);
+if(!empty($_SESSION['ueb_messages'])) {
+    foreach ($_SESSION['ueb_messages'] as $id => $message) {
+        if(in_array($id, array_keys($sendedIds)?:[])) {
+            unset($_SESSION['ueb_messages'][$id]);
+        }
+    }
+}else{
+    $_SESSION['ueb_messages'] = [];
+}
+$_SESSION['ueb_messages'] = array_merge($_SESSION['ueb_messages'], $messages);
+
+if (!empty($_SESSION['ueb_messages'])) {
+    sendMessages($_SESSION['ueb_messages']);
 }

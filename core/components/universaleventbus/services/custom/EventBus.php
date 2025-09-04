@@ -61,7 +61,7 @@ class EventBus
     /**
      * @var bool $debug
      */
-    private bool $debug;
+    public bool $debug;
     /**
      * @var bool $useCache
      */
@@ -103,6 +103,10 @@ class EventBus
      * @var array $options
      */
     public array $options = [];
+    /**
+     * @var string $sessionId
+     */
+    public string $sessionId = '';
 
     /**
      * @param \modX $modx
@@ -120,11 +124,6 @@ class EventBus
      */
     private function initialize()
     {
-        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $this->modx->context->get('key');
-        if ($this->ctx !== $this->modx->context->get('key')) {
-            $this->modx->switchContext($this->ctx);
-        }
-
         $this->branch = $this->properties['branch'] ?: session_id();
         $this->debug = $this->modx->getOption('ueb_debug', null, false);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
@@ -136,9 +135,6 @@ class EventBus
         $this->isBot = $crawlerDetect->isCrawler();
         $this->msop = $this->setMsOptionPrice();
         $this->miniShop2 = $this->modx->getService('miniShop2');
-        if ($this->miniShop2 && !$this->miniShop2->initialized[$this->ctx]) {
-            $this->miniShop2->initialize($this->ctx);
-        }
 
         $this->modx->invokeEvent('OnUebInit', [
             'branch' => $this->branch,
@@ -180,12 +176,14 @@ class EventBus
         $q->select('value');
         $q->where(['key' => 'http_host', 'context_key' => 'web']);
         if (!$host = $this->execute($this->getSQL($q), 'fetch', [\PDO::FETCH_COLUMN])[0]) {
-            $host = $this->modx->getOption('http_host'); // получаем хост текущего контекста
+            $host = $_SERVER['HTTP_HOST'];
         }
-        if ($q->stmt->execute()) { // если в контексте web есть настройка http_host, то предполагается, что это базовый хост, а в других контекстах поддомены
-            $host = $q->stmt->fetchColumn();
+
+        if (strpos($_SERVER['HTTP_HOST'], $host) === false) {
+            $host = $this->modx->getOption('http_host');
         }
-        setcookie($this->contextCookieName, $this->modx->context->key, $expirationTime, '/', '.' . $host);
+
+        setcookie($this->contextCookieName, $this->modx->context->key, $expirationTime, '/', $host);
     }
 
     /**
@@ -249,17 +247,26 @@ class EventBus
 
     /**
      * @param string $eventName
-     * @return void
+     * @return bool
      */
-    public function handleEvent(string $eventName)
+    public function handleEvent(string $eventName): bool
     {
+        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: '';
+        if ($this->ctx && $this->ctx !== $this->modx->context->get('key')) {
+            $this->modx->switchContext($this->ctx);
+        }
+
+        if ($this->miniShop2 && !$this->miniShop2->initialized[$this->ctx]) {
+            $this->miniShop2->initialize($this->ctx);
+        }
+
         $this->modx->invokeEvent('OnBeforeUebHandleEvent', [
             'dispatch' => $this->dispatch,
             'EventBus' => &$this
         ]);
 
         if ($this->isBot || !$this->dispatch) {
-            return;
+            return false;
         }
 
         $this->output = [
@@ -288,6 +295,7 @@ class EventBus
         if ($this->dispatch) {
             $this->queuemanager->addToQueue($this->branch, $this->output, $this->options);
         }
+        return $this->dispatch;
     }
 
     /**
@@ -388,8 +396,8 @@ class EventBus
      */
     private function getConditionsForGetResourceData(): array
     {
-        $extension = pathinfo($_SERVER['REQUEST_URI'], PATHINFO_EXTENSION);
-        $extension = explode('?', $extension)[0];
+        $extension = explode('?', $_SERVER['REQUEST_URI'])[0];
+        $extension = pathinfo($extension, PATHINFO_EXTENSION);
         if (isset($this->properties['rid'])) {
             return [
                 'id' => $this->properties['rid']
@@ -456,7 +464,7 @@ class EventBus
             }
 
             $this->modx->cacheManager->set($hash, $output, $this->cacheExpireTime, $this->cacheOptions);
-            if ($this->debug) {
+            if ($this->debug && $this->sessionId === session_id()) {
                 $this->logging->write(__METHOD__ . ':' . __LINE__, 'resourceData: ', $output);
             }
             return $output;
@@ -487,7 +495,7 @@ class EventBus
         $q->select($this->modx->getSelectColumns('msPayment', 'Payment', 'payment_'));
         $q->where(['msOrder.id' => $orderId]);
         $orderData = $this->execute($this->getSQL($q));
-        if ($this->debug) {
+        if ($this->debug && $this->sessionId === session_id()) {
             $this->logging->write(__METHOD__ . ':' . __LINE__, 'orderData: ', $orderData);
         }
         foreach ($orderData as $k => $v) {
@@ -511,6 +519,8 @@ class EventBus
         $cart = $this->miniShop2->cart->get();
         $item = $cart[$this->properties['key']] ?? $_SESSION['ueb']['cart'][$this->properties['key']] ?? [];
         $oldCount = $_SESSION['ueb']['cart'][$this->properties['key']]['count'] ?? 0;
+        $item['count_change'] = '';
+
         if ($oldCount - $item['count'] > 0) {
             $item['count_change'] = 'remove';
         }
@@ -518,9 +528,7 @@ class EventBus
         if ($oldCount - $item['count'] < 0) {
             $item['count_change'] = 'add';
         }
-        if ($oldCount === $item['count']) {
-            $item['count_change'] = '';
-        }
+
         $_SESSION['ueb']['cart'] = $cart;
         return [
             'products' => $cart,
@@ -755,8 +763,8 @@ class EventBus
             }
             $this->replacements = [];
         }
-        if ($this->debug) {
-            $this->logging->write(__METHOD__ . ':' . __LINE__, 'SQL: ', $sql);
+        if ($this->debug && $this->sessionId === session_id()) {
+            $this->logging->write(__METHOD__ . ':' . __LINE__, 'SQL: '. $sql);
         }
         return $sql;
     }

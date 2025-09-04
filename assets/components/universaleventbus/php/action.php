@@ -35,10 +35,10 @@ if (empty($_POST['eventName'])) {
 }
 require_once $path;
 $EventBus = new EventBus($modx, $_POST);
-$EventBus->handleEvent($_POST['eventName']);
+$pushed = $EventBus->handleEvent($_POST['eventName']);
 $response = [
-    'success' => true,
-    'message' => "Event added",
+    'success' => $pushed,
+    'message' => $pushed ? "Event add" : "Event rejected",
     'data' => $_POST
 ];
 die(json_encode($response));
