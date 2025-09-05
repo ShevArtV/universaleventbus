@@ -132,7 +132,7 @@ class EventBus {
   checkClasses(target, classes) {
     if (!classes.length) return false;
     for (let i = 0; i < classes.length; i++) {
-      if (target.closest(`.${classes[i]}`)) {
+      if (target.closest(`${classes[i]}`)) {
         return true;
       }
     }
