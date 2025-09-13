@@ -247,11 +247,12 @@ class EventBus
 
     /**
      * @param string $eventName
+     * @param string|null $ctx
      * @return bool
      */
-    public function handleEvent(string $eventName): bool
+    public function handleEvent(string $eventName, ?string $ctx = ''): bool
     {
-        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: '';
+        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $ctx;
         if ($this->ctx && $this->ctx !== $this->modx->context->get('key')) {
             $this->modx->switchContext($this->ctx);
         }
