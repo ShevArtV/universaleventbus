@@ -247,12 +247,11 @@ class EventBus
 
     /**
      * @param string $eventName
-     * @param string|null $ctx
      * @return bool
      */
-    public function handleEvent(string $eventName, ?string $ctx = ''): bool
+    public function handleEvent(string $eventName): bool
     {
-        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $ctx;
+        $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $this->modx->context->get('key');
         if ($this->ctx && $this->ctx !== $this->modx->context->get('key')) {
             $this->modx->switchContext($this->ctx);
         }
@@ -266,7 +265,7 @@ class EventBus
             'EventBus' => &$this
         ]);
 
-        if ($this->isBot || !$this->dispatch) {
+        if (($this->isBot && strpos($eventName,'OnChangeOrderStatus') === false) || !$this->dispatch) {
             return false;
         }
 
@@ -283,8 +282,9 @@ class EventBus
         ];
         $this->output['userData'] = $this->getUserData($this->getUserId());
         $this->output['productsData'] = $this->getProductsData($eventName);
+
         if (empty($this->output['productsData']) && $this->output['pageData']['class_key'] === 'msProduct') {
-            $this->output['productsData'] = [$this->getProductData($this->output['pageData'])];
+            $this->output['productsData'] = [];
         }
 
         $this->modx->invokeEvent('OnUebHandleEvent', [
@@ -305,7 +305,7 @@ class EventBus
     private function getUserId(): int
     {
         if(!empty($this->output['orderData'])) {
-            return $this->output['orderData']['user_id'];
+            return $this->output['orderData']['user_id'] ?: 0;
         }
 
         if ($this->modx->user->isAuthenticated($this->ctx)) {
@@ -379,6 +379,7 @@ class EventBus
         }
 
         $resourceData = $this->getResourceData($where);
+
         $this->dispatch = isset($resourceData['id']);
         if ($this->msop && $resourceData['class_key'] === 'msProduct') {
             $resourceData['modification'] = (int)$_REQUEST['mid'];
@@ -391,7 +392,6 @@ class EventBus
         return $this->filterArray($resourceData);
     }
 
-
     /**
      * @return array
      */
@@ -399,6 +399,7 @@ class EventBus
     {
         $extension = explode('?', $_SERVER['REQUEST_URI'])[0];
         $extension = pathinfo($extension, PATHINFO_EXTENSION);
+
         if (isset($this->properties['rid'])) {
             return [
                 'id' => $this->properties['rid']
@@ -483,7 +484,7 @@ class EventBus
         }
         $orderId = $this->getOrderId();
         if (!$orderId) {
-            return [];
+            return $this->miniShop2->order->get();
         }
 
         $q = $this->modx->newQuery('msOrder');
@@ -553,7 +554,7 @@ class EventBus
             $orderData = $msOrder->get();
             $orderId = $orderData['id'];
         }
-        return $orderId;
+        return $orderId ?: 0;
     }
 
     /**
@@ -609,6 +610,7 @@ class EventBus
                 $output[] = $this->getProductData($product);
             }
         }
+
         return $output;
     }
 

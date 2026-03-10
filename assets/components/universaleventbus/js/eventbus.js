@@ -13,7 +13,7 @@ class EventBus {
       eventSourceInitDelay: 100,
       expiredMessageId: 100000,
       intersectionObserverOptions: {
-        threshold: 0.5,
+        threshold: 0.2,
         rootMargin: '0px',
       }
     };
@@ -125,7 +125,7 @@ class EventBus {
   sendHideShowEvent(target, type = 'show') {
     if (!target) return;
     this.sendEvent(target).then(() => {
-      target.setAttribute(this.config.eventAttr, type);
+      (target.dataset[this.config.onceKey] !== '1') && target.setAttribute(this.config.eventAttr, type);
     });
   }
 
