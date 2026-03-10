@@ -163,7 +163,8 @@ class EventBus {
     const fetchOptions = {
       method: 'POST',
       body: params,
-      headers: {}
+      headers: {},
+      keepalive: true
     };
 
     const response = await fetch(this.config.actionUrl, fetchOptions);
