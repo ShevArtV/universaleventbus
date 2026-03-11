@@ -89,7 +89,7 @@ class EventBus
     /**
      * @var string $contextCookieName
      */
-    public string $contextCookieName = 'ueb_context';
+    public string $contextCookieName;
     /**
      * @var string $requestContextParam
      */
@@ -127,6 +127,7 @@ class EventBus
         $this->branch = $this->properties['branch'] ?: session_id();
         $this->debug = $this->modx->getOption('ueb_debug', null, false);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
+        $this->contextCookieName = $this->modx->getOption('ueb_context_cookie_name', null, 'ueb_context');
         $translit = $this->modx->getOption('ueb_translit', null, '');
         $this->translit = $translit ? explode(',', $translit) : [];
         $this->logging = new Logging($this->debug);
@@ -252,7 +253,7 @@ class EventBus
     public function handleEvent(string $eventName): bool
     {
         $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $this->modx->context->get('key');
-        if ($this->ctx && $this->ctx !== $this->modx->context->get('key')) {
+        if ($this->ctx && $this->ctx !== $this->modx->context->get('key') && $this->modx->getCount($this->ctx)) {
             $this->modx->switchContext($this->ctx);
         }
 
