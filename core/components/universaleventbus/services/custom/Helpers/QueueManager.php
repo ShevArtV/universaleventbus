@@ -59,9 +59,7 @@ class QueueManager
         $registryClass = $this->modx->getOption('registry_class', null, 'registry.modFileRegister');
         $registry = $this->modx->getService('registry', 'registry.modRegistry');
         $this->QM = $registry->getRegister($queueName, $registryClass);
-        $this->logging = new Logging();
-        $logFileName = str_replace('\\', '-', self::class) . '.txt';
-        $this->logging->setPath($logFileName);
+        $this->logging = new Logging($this->modx, (bool) $this->modx->getOption('ueb_debug', null, false));
     }
 
     /**
@@ -72,7 +70,7 @@ class QueueManager
     public function getMessages(string $branch, ?bool $remove = true): array
     {
         if (!$branch) {
-            $this->logging->write(__METHOD__, 'Branch is empty');
+            $this->logging->write(__METHOD__, 'Branch is empty', [], false, 'warning', 'queue');
             return [];
         }
 
@@ -97,11 +95,11 @@ class QueueManager
     public function addToQueue($branch, $data,  $options = []): bool
     {
         if (!$data) {
-            $this->logging->write(__METHOD__, 'Data is empty');
+            $this->logging->write(__METHOD__, 'Data is empty', [], false, 'warning', 'queue');
             return false;
         }
         if (!$branch) {
-            $this->logging->write(__METHOD__, 'Branch is empty');
+            $this->logging->write(__METHOD__, 'Branch is empty', [], false, 'warning', 'queue');
             return false;
         }
 

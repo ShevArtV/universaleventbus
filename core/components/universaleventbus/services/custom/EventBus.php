@@ -130,7 +130,8 @@ class EventBus
         $this->contextCookieName = $this->modx->getOption('ueb_context_cookie_name', null, 'ueb_context');
         $translit = $this->modx->getOption('ueb_translit', null, '');
         $this->translit = $translit ? explode(',', $translit) : [];
-        $this->logging = new Logging($this->debug);
+        $this->logging = new Logging($this->modx, $this->debug, $this->modx->getOption('ueb_log_level', null, 'debug'));
+        $this->logging->setProcess('universaleventbus_' . substr(md5((string) $this->branch), 0, 12));
         $this->queuemanager = new QueueManager($this->modx);
         $crawlerDetect = new CrawlerDetect;
         $this->isBot = $crawlerDetect->isCrawler();
@@ -468,7 +469,7 @@ class EventBus
 
             $this->modx->cacheManager->set($hash, $output, $this->cacheExpireTime, $this->cacheOptions);
             if ($this->debug && $this->sessionId === session_id()) {
-                $this->logging->write(__METHOD__ . ':' . __LINE__, 'resourceData: ', $output);
+                $this->logging->write(__METHOD__ . ':' . __LINE__, 'resourceData: ', $output, false, 'debug', 'events');
             }
             return $output;
         }
@@ -485,7 +486,7 @@ class EventBus
         }
         $orderId = $this->getOrderId();
         if (!$orderId) {
-            return $this->miniShop2->order->get();
+            return $this->miniShop2->order->get() ?: [];
         }
 
         $q = $this->modx->newQuery('msOrder');
@@ -499,7 +500,7 @@ class EventBus
         $q->where(['msOrder.id' => $orderId]);
         $orderData = $this->execute($this->getSQL($q));
         if ($this->debug && $this->sessionId === session_id()) {
-            $this->logging->write(__METHOD__ . ':' . __LINE__, 'orderData: ', $orderData);
+            $this->logging->write(__METHOD__ . ':' . __LINE__, 'orderData: ', $orderData, false, 'debug', ['events', 'order']);
         }
         foreach ($orderData as $k => $v) {
             if(strpos($k, 'properties') !== false && !is_array($v)) {
@@ -768,7 +769,7 @@ class EventBus
             $this->replacements = [];
         }
         if ($this->debug && $this->sessionId === session_id()) {
-            $this->logging->write(__METHOD__ . ':' . __LINE__, 'SQL: '. $sql);
+            $this->logging->write(__METHOD__ . ':' . __LINE__, 'SQL: '. $sql, [], false, 'debug', 'events');
         }
         return $sql;
     }

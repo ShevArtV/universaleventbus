@@ -2,7 +2,9 @@
 
 $_lang['area_ueb_switch'] = 'Переключатели';
 $_lang['setting_ueb_debug'] = 'Включить отладку';
-$_lang['setting_ueb_debug_desc'] = '';
+$_lang['setting_ueb_debug_desc'] = 'Логи пишутся в mxLogger (если установлен).';
+$_lang['setting_ueb_log_level'] = 'Минимальный уровень логирования';
+$_lang['setting_ueb_log_level_desc'] = 'Записи ниже уровня не пишутся: debug, info, warning, error. По умолчанию: debug (пишется всё). Требует mxLogger.';
 $_lang['setting_ueb_cache'] = 'Использовать кэширование';
 $_lang['setting_ueb_cache_desc'] = '';
 
