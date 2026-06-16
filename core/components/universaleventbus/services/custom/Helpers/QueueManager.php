@@ -59,7 +59,7 @@ class QueueManager
         $registryClass = $this->modx->getOption('registry_class', null, 'registry.modFileRegister');
         $registry = $this->modx->getService('registry', 'registry.modRegistry');
         $this->QM = $registry->getRegister($queueName, $registryClass);
-        $this->logging = new Logging($this->modx, (bool) $this->modx->getOption('ueb_debug', null, false));
+        $this->logging = new Logging($this->modx, (bool) $this->modx->getOption('ueb_debug', null, true));
     }
 
     /**

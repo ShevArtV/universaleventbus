@@ -125,12 +125,12 @@ class EventBus
     private function initialize()
     {
         $this->branch = $this->properties['branch'] ?: session_id();
-        $this->debug = $this->modx->getOption('ueb_debug', null, false);
+        $this->debug = $this->modx->getOption('ueb_debug', null, true);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
         $this->contextCookieName = $this->modx->getOption('ueb_context_cookie_name', null, 'ueb_context');
         $translit = $this->modx->getOption('ueb_translit', null, '');
         $this->translit = $translit ? explode(',', $translit) : [];
-        $this->logging = new Logging($this->modx, $this->debug, $this->modx->getOption('ueb_log_level', null, 'debug'));
+        $this->logging = new Logging($this->modx, $this->debug, $this->modx->getOption('ueb_log_level', null, 'error'));
         $this->logging->setProcess('universaleventbus_' . substr(md5((string) $this->branch), 0, 12));
         $this->queuemanager = new QueueManager($this->modx);
         $crawlerDetect = new CrawlerDetect;

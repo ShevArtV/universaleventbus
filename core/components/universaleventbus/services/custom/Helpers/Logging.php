@@ -54,7 +54,7 @@ class Logging
         $this->modx = $modx;
         $this->debug = $debug === null ? true : (bool) $debug;
         $this->minLevel = $this->normalizeLevel(
-            $minLevel === null ? $modx->getOption('ueb_log_level', null, 'debug') : $minLevel
+            $minLevel === null ? $modx->getOption('ueb_log_level', null, 'error') : $minLevel
         );
     }
 
