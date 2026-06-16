@@ -4,7 +4,7 @@
   записи сервису mxLogger (если установлен), иначе молчит и один раз предупреждает в
   журнале MODX. Перевод затронул EventBus и QueueManager.
 - Гейты: ueb_debug (вкл/выкл) + новая настройка ueb_log_level (минимальный уровень
-  debug|info|warning|error, по умолчанию debug). Консистентно с mxLogger.min_level.
+  debug|info|warning|error, по умолчанию error; единый приёмник mxLogger, включено из коробки). Консистентно с mxLogger.min_level.
   QueueManager теперь учитывает ueb_debug (раньше new Logging() без гейта).
 - Тэги: базовые universaleventbus + events, этапные order (orderData), queue (очередь).
   Воронка process_uid = «universaleventbus_»+md5(branch) — события одной сессии/ветки
