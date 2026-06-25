@@ -146,6 +146,18 @@ class EventBus {
     if (!paramsObj.eventName) {
       return;
     }
+
+    // keepalive нужен только событиям, которые должны пережить выгрузку страницы.
+    // По спецификации Fetch суммарное тело ВСЕХ keepalive-запросов на странице
+    // ограничено 64 КБ; превышение → TypeError: Failed to fetch. Поэтому включаем
+    // его лишь по явному флагу (paramsObj/data-ueb-params/config) либо когда
+    // страница уже скрывается (pagehide/visibilitychange→hidden).
+    const keepalive = paramsObj.keepalive === true
+      || paramsObj.keepalive === 'true'
+      || this.config.keepalive === true
+      || document.visibilityState === 'hidden';
+    delete paramsObj.keepalive;
+
     const params = new FormData();
     for (let [key, value] of Object.entries(paramsObj)) {
       params.append(key, value);
@@ -164,8 +176,10 @@ class EventBus {
       method: 'POST',
       body: params,
       headers: {},
-      keepalive: true
     };
+    if (keepalive) {
+      fetchOptions.keepalive = true;
+    }
 
     const response = await fetch(this.config.actionUrl, fetchOptions);
 
