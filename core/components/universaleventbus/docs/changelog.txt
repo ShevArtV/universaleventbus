@@ -1,3 +1,11 @@
+1.2.6-pl
+==============
+- FIX: keepalive у fetch-запросов eventbus.js включается только по явному флагу
+  (paramsObj.keepalive / data-ueb-params / config.keepalive) либо когда страница уже
+  скрывается (visibilityState=hidden). Раньше keepalive:true стоял на всех запросах:
+  по спецификации Fetch суммарное тело всех keepalive-запросов страницы ограничено
+  64 КБ, превышение давало TypeError: Failed to fetch и терялись события.
+
 1.2.5-pl
 ==============
 - Логирование переведено с файлов (logs/*.txt) на mxLogger. Хелпер Logging делегирует
