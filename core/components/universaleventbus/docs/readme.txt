@@ -21,13 +21,13 @@ Cursor-события хранятся с TTL в локальной таблиц
 Как пользоваться:
 1. Создать в админке плагин с любым именем и подключить его к нужным событиям.
 <code>
-use UniversalEventBus\Services\EventBus;
+use UniversalEventBus\EventBus;
 
 $basePath = $modx->getOption('base_path', null, $_SERVER['DOCUMENT_ROOT'] . '/');
 require_once $basePath . 'core/components/universaleventbus/services/vendor/autoload.php';
 
 $eventBus = new EventBus($modx);
-$eventBus->sendEvent($modx->event->name);
+$eventBus->handleEvent($modx->event->name);
 </code>
 
 2. В JavaScript нужно ловить событие "eventbus" и в обработчике выполнять необходимое действие.
