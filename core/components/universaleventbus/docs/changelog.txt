@@ -1,3 +1,15 @@
+1.3.0-rc
+==============
+- FEATURE: adaptive local transport без внешних сервисов. Активная вкладка держит bounded
+  SSE с heartbeat, после idle переходит на короткий cursor polling с backoff, скрытая
+  вкладка не держит PHP worker. BroadcastChannel оставляет один transport на browser profile.
+- FEATURE: события хранятся до TTL в локальной таблице <prefix>ueb_events с cursor и UUID;
+  SSE освобождает PHP session lock до цикла. Событие не удаляется при первом чтении, поэтому
+  новая страница или вкладка может дочитать его до TTL.
+- FIX: click по обычной ссылке с data-ueb-event ждёт запись события не дольше
+  ueb_navigation_timeout и перед переходом останавливает transport текущей страницы.
+  Это устраняет гонку отменённого fetch при выгрузке документа.
+
 1.2.6-pl
 ==============
 - FIX: keepalive у fetch-запросов eventbus.js включается только по явному флагу

@@ -5,6 +5,7 @@ namespace UniversalEventBus;
 
 use UniversalEventBus\Helpers\Logging;
 use UniversalEventBus\Helpers\QueueManager;
+use UniversalEventBus\Helpers\EventStore;
 use Jaybizzle\CrawlerDetect\CrawlerDetect;
 
 /**
@@ -26,6 +27,10 @@ class EventBus
      * @var QueueManager $queuemanager
      */
     public QueueManager $queuemanager;
+    /**
+     * @var EventStore $eventstore
+     */
+    public EventStore $eventstore;
     /**
      * @var \msoptionsprice|null $msop
      */
@@ -124,7 +129,7 @@ class EventBus
      */
     private function initialize()
     {
-        $this->branch = $this->properties['branch'] ?: session_id();
+        $this->branch = !empty($this->properties['branch']) ? (string) $this->properties['branch'] : session_id();
         $this->debug = $this->modx->getOption('ueb_debug', null, true);
         $this->useCache = $this->modx->getOption('ueb_cache', null, true);
         $this->contextCookieName = $this->modx->getOption('ueb_context_cookie_name', null, 'ueb_context');
@@ -133,6 +138,19 @@ class EventBus
         $this->logging = new Logging($this->modx, $this->debug, $this->modx->getOption('ueb_log_level', null, 'error'));
         $this->logging->setProcess('universaleventbus_' . substr(md5((string) $this->branch), 0, 12));
         $this->queuemanager = new QueueManager($this->modx);
+        $this->eventstore = new EventStore($this->modx);
+
+        // SSE/cursor endpoints need the branch hooks, but not crawler detection,
+        // miniShop2 or msOptionsPrice initialization.
+        $onReading = !empty($this->properties['onReading']);
+        if ($onReading) {
+            $this->modx->invokeEvent('OnUebInit', [
+                'branch' => $this->branch,
+                'EventBus' => &$this
+            ]);
+            return;
+        }
+
         $crawlerDetect = new CrawlerDetect;
         $this->isBot = $crawlerDetect->isCrawler();
         $this->msop = $this->setMsOptionPrice();
@@ -211,6 +229,11 @@ class EventBus
             'version' => $scriptsVersion,
             'handlerPath' => $this->modx->getOption('ueb_sse_handler_path', '', '/assets/components/universaleventbus/php/ssehandler.php'),
             'actionUrl' => $this->modx->getOption('ueb_action_url', '', '/assets/components/universaleventbus/php/action.php'),
+            'transport' => $this->modx->getOption('ueb_transport', null, 'adaptive'),
+            'streamIdleTimeout' => (int) $this->modx->getOption('ueb_stream_idle_timeout', null, 30000),
+            'cursorPollInitial' => (int) $this->modx->getOption('ueb_cursor_poll_initial', null, 2000),
+            'cursorPollMax' => (int) $this->modx->getOption('ueb_cursor_poll_max', null, 30000),
+            'navigationTimeout' => (int) $this->modx->getOption('ueb_navigation_timeout', null, 1200),
             'openClasses' => $openClasses ? explode(',', $openClasses) : [],
             'closeClasses' => $closeClasses ? explode(',', $closeClasses) : [],
         ];
@@ -296,7 +319,17 @@ class EventBus
         ]);
 
         if ($this->dispatch) {
-            $this->queuemanager->addToQueue($this->branch, $this->output, $this->options);
+            $transport = $this->modx->getOption('ueb_transport', null, 'adaptive');
+            if ($transport === 'legacy') {
+                $this->queuemanager->addToQueue($this->branch, $this->output, $this->options);
+            } else {
+                $ttl = isset($this->options['ttl'])
+                    ? (int) $this->options['ttl']
+                    : (int) $this->modx->getOption('ueb_event_ttl', null, 300);
+                if ($this->eventstore->publish($this->branch, $this->output, $ttl) === null) {
+                    $this->dispatch = false;
+                }
+            }
         }
         return $this->dispatch;
     }
@@ -322,7 +355,11 @@ class EventBus
      */
     public function getEventId(string $eventName): string
     {
-        return md5($eventName . time());
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (\Throwable $exception) {
+            return md5($eventName . microtime(true) . uniqid('', true));
+        }
     }
 
     /**

@@ -1,4 +1,5 @@
 import UebBroadcastChannel from './broadcastchannel.js';
+import AdaptiveTransport from './adaptive-transport.js';
 
 class EventBus {
   constructor() {
@@ -10,7 +11,7 @@ class EventBus {
       beforeSendEvent: 'eventbus:before:send',
       onceKey: 'uebOnce',
       paramsKey: 'uebParams',
-      eventSourceInitDelay: 100,
+      navigationTimeout: 1200,
       expiredMessageId: 100000,
       intersectionObserverOptions: {
         threshold: 0.2,
@@ -19,39 +20,117 @@ class EventBus {
     };
     this.config = Object.assign(this.config, window.uebConfig);
     window.EventBus = this;
-    new UebBroadcastChannel();
+    this.receivedEventIds = new Map();
+    this.transport = this.config.transport === 'legacy'
+      ? null
+      : new AdaptiveTransport(this.config, {
+        onEvent: (data, cursor) => this.receiveTransportEvent(data, cursor, true),
+      });
+    this.broadcastChannel = new UebBroadcastChannel(this);
+    this.initialize();
   }
 
   initialize() {
-    setTimeout(() => {
-      this.initializeEventSource();
-    }, this.config.eventSourceInitDelay);
-
     const eventTargets = document.querySelectorAll(`[${this.config.eventAttr}]`);
-    if (!eventTargets.length) return;
-
-    this.initializeIntersectionObserver();
-    this.initializeMutationObserver();
-    this.addObservers(eventTargets);
+    if (eventTargets.length) {
+      this.initializeIntersectionObserver();
+      this.initializeMutationObserver();
+      this.addObservers(eventTargets);
+    }
+    this.addActivityListeners();
   }
 
-  initializeEventSource() {
-    if (document.hidden) return;
-    if (this.eventSource) return;
-    this.eventSource = new EventSource(this.config.handlerPath);
+  setTransportLeader(isLeader) {
+    if (this.transport) {
+      this.transport.setLeader(isLeader);
+      return;
+    }
+    if (isLeader && !document.hidden) {
+      this.initializeLegacyEventSource();
+    } else {
+      this.closeLegacyEventSource();
+    }
+  }
+
+  setTransportVisible(isVisible) {
+    if (this.transport) {
+      this.transport.setVisible(isVisible);
+      return;
+    }
+    if (!isVisible) {
+      this.closeLegacyEventSource();
+    }
+  }
+
+  onRemoteActivity() {
+    if (this.transport) {
+      this.transport.notifyActivity();
+    }
+  }
+
+  initializeLegacyEventSource() {
+    if (document.hidden || this.eventSource) return;
+    this.eventSource = new EventSource(this.config.handlerPath + '?mode=legacy');
 
     this.eventSource.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data) {
-        document.dispatchEvent(new CustomEvent(this.config.dispatchEvent, {
-          bubbles: false, cancelable: false, detail: {
-            data: data,
-            lastEventId: e.lastEventId
-          }
-        }));
+        this.receiveTransportEvent(data, e.lastEventId, true);
         setTimeout(() => this.saveMessageId(e.lastEventId), 100);
       }
     };
+  }
+
+  closeLegacyEventSource() {
+    if (!this.eventSource) return;
+    this.eventSource.close();
+    this.eventSource = null;
+  }
+
+  receiveTransportEvent(data, cursor, broadcast = false) {
+    if (!data || typeof data !== 'object') return;
+    const eventId = data.eventId ? String(data.eventId) : '';
+    if (eventId && this.receivedEventIds.has(eventId)) return;
+
+    if (eventId) {
+      this.receivedEventIds.set(eventId, Date.now());
+      this.pruneReceivedEventIds();
+    }
+    document.dispatchEvent(new CustomEvent(this.config.dispatchEvent, {
+      bubbles: false,
+      cancelable: false,
+      detail: {
+        data: data,
+        lastEventId: String(cursor || ''),
+      }
+    }));
+    if (broadcast && this.broadcastChannel) {
+      this.broadcastChannel.broadcastEvent(data, cursor);
+    }
+  }
+
+  pruneReceivedEventIds() {
+    const expires = Number(this.config.expiredMessageId) || 100000;
+    const now = Date.now();
+    for (const [eventId, createdAt] of this.receivedEventIds.entries()) {
+      if (now - createdAt > expires) {
+        this.receivedEventIds.delete(eventId);
+      }
+    }
+  }
+
+  addActivityListeners() {
+    const activity = () => {
+      if (this.transport) {
+        this.transport.notifyActivity();
+      }
+      if (this.broadcastChannel) {
+        this.broadcastChannel.notifyActivity();
+      }
+    };
+    document.addEventListener('pointerdown', activity, {passive: true});
+    document.addEventListener('keydown', activity, {passive: true});
+    window.addEventListener('focus', activity, {passive: true});
   }
 
   initializeIntersectionObserver() {
@@ -101,12 +180,76 @@ class EventBus {
         });
         break;
       default:
-        target.addEventListener(eventName, () => {
+        target.addEventListener(eventName, (event) => {
+          if (this.deferNavigation(event, target)) {
+            return;
+          }
           this.sendEvent(target).then();
         });
         break;
       }
     });
+  }
+
+  deferNavigation(event, target) {
+    if (event.type !== 'click'
+      || event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey) {
+      return false;
+    }
+
+    const link = target.closest ? target.closest('a[href]') : null;
+    if (!link
+      || link.hasAttribute('download')
+      || (link.target && link.target.toLowerCase() !== '_self')) {
+      return false;
+    }
+
+    let destination;
+    try {
+      destination = new URL(link.href, window.location.href);
+    } catch {
+      return false;
+    }
+    if (!['http:', 'https:'].includes(destination.protocol)) {
+      return false;
+    }
+
+    const current = new URL(window.location.href);
+    if (destination.origin === current.origin
+      && destination.pathname === current.pathname
+      && destination.search === current.search
+      && destination.hash !== current.hash) {
+      return false;
+    }
+
+    event.preventDefault();
+    // Do not let the current page consume and persist the new cursor between
+    // action.php accepting the event and the navigation being committed. The
+    // next page will resume from the previous cursor and receive the event.
+    this.setTransportVisible(false);
+    let navigated = false;
+    const navigate = () => {
+      if (navigated) return;
+      navigated = true;
+      window.location.assign(destination.href);
+    };
+    const timeout = Math.max(100, Number(this.config.navigationTimeout) || 1200);
+    const timer = window.setTimeout(navigate, timeout);
+
+    this.sendEvent(target, {keepalive: true}).then(() => {
+      window.clearTimeout(timer);
+      navigate();
+    }, () => {
+      window.clearTimeout(timer);
+      navigate();
+    });
+
+    return true;
   }
 
   saveMessageId(messageId) {
@@ -140,8 +283,18 @@ class EventBus {
   }
 
   async sendEvent(target, paramsObj = {}) {
+    if (this.transport) {
+      this.transport.notifyActivity();
+    }
+    if (this.broadcastChannel) {
+      this.broadcastChannel.notifyActivity();
+    }
+    const forceKeepalive = paramsObj.keepalive === true;
     paramsObj.eventName = paramsObj.eventName || target.dataset[this.config.eventKey];
     paramsObj = Object.assign(paramsObj, this.getParams(target));
+    if (forceKeepalive) {
+      paramsObj.keepalive = true;
+    }
 
     if (!paramsObj.eventName) {
       return;
@@ -235,10 +388,10 @@ class EventBus {
   }
 
   close() {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
+    if (this.transport) {
+      this.transport.pause();
     }
+    this.closeLegacyEventSource();
     if (this.intersectionObserver) {
       this.intersectionObserver.disconnect();
       this.intersectionObserver = null;
