@@ -187,6 +187,15 @@ class EventBus
     }
 
     /**
+     * Кука контекста ставится на домен основного контекста, чтобы переключение
+     * переживало переход между витринами: у мультидоменного сайта они часто
+     * разведены по поддоменам одного домена.
+     *
+     * ⚠️ Домен берётся строкой: fetch(PDO::FETCH_COLUMN) возвращает значение
+     * колонки, а не массив. Прежний `[0]` брал ПЕРВЫЙ СИМВОЛ этой строки, и
+     * кука уходила на домен вида `s` — браузер её отбрасывал, а контекст
+     * откатывался к дефолтному на каждом чужом поддомене.
+     *
      * @return void
      */
     public function setContextCookie()
@@ -195,10 +204,13 @@ class EventBus
         $q = $this->modx->newQuery('modContextSetting');
         $q->select('value');
         $q->where(['key' => 'http_host', 'context_key' => 'web']);
-        if (!$host = $this->execute($this->getSQL($q), 'fetch', [\PDO::FETCH_COLUMN])[0]) {
+        $host = $this->execute($this->getSQL($q), 'fetch', [\PDO::FETCH_COLUMN]);
+        if (!is_string($host) || $host === '') {
             $host = $_SERVER['HTTP_HOST'];
         }
 
+        // Домен основного контекста не обслуживает текущий запрос (витрины на
+        // разных доменах, а не поддоменах) — кука остаётся на своём домене.
         if (strpos($_SERVER['HTTP_HOST'], $host) === false) {
             $host = $this->modx->getOption('http_host');
         }
