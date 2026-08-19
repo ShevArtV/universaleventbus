@@ -65,7 +65,7 @@ document.addEventListener('eventbus', (event) => {
 - OnUebInit (после инициализации компонента): $EventBus
 - OnBeforeUebHandleEvent (перед получением данные и добавления в очередь): $EventBus, $dispatch
 - OnUebHandleEvent (после получения данных, но перед добавлением в очередь): $output, $EventBus
-- OnUebGetProductsData (получение данных о товаре): $product, $EventBus.
+- OnUebGetProductData (получение данных о товаре): $product, $EventBus.
 - OnGetUebWebConfig (получение конфигурации фронтенда): $webConfig, $EventBus.
 
 Вы можете отменить добавление события в очередь в плагине: $EventBus->dispatch = false.
