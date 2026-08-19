@@ -80,6 +80,10 @@ class EventBus
      */
     public array $product = [];
     /**
+     * @var array $pageData
+     */
+    public array $pageData = [];
+    /**
      * @var \miniShop2|null $miniShop2
      */
     public ?\miniShop2 $miniShop2 = null;
@@ -439,8 +443,16 @@ class EventBus
                 $resourceData['options'] = is_array($_REQUEST['options']) ? $_REQUEST['options'] : json_decode($_REQUEST['options'], true);
             }
             $resourceData['variant'] = $this->getProductVariant($resourceData);
+            $resourceData['price'] = $this->getShowPrice($resourceData);
         }
-        return $this->filterArray($resourceData);
+
+        $this->pageData = $resourceData;
+        $this->modx->invokeEvent('OnUebGetPageData', [
+            'pageData' => $this->pageData,
+            'EventBus' => &$this
+        ]);
+
+        return $this->filterArray($this->pageData);
     }
 
     /**
@@ -671,13 +683,23 @@ class EventBus
      */
     public function getProductData(array $product): array
     {
+        $hasOwnPrice = isset($product['price']);
         $data = $this->getResourceData(['id' => ($product['product_id'] ?: $product['id'])]);
         $product = array_merge($data, $product);
-        $product['cost'] = $product['price'] * $product['count'];
 
         if ($this->msop && empty($product['variant'])) {
             $product['variant'] = $this->getProductVariant($product);
         }
+
+        // Позиция корзины и позиция заказа приносят свою цену — она уже учитывает
+        // модификацию и скидки, пересчитывать её нельзя. Ветки, собранные из ресурса
+        // (листинг по $_REQUEST['ids'], вызовы getProductData() снаружи), цены не
+        // приносят вовсе и получают из msProductData цену товара, а не цену показа.
+        if ($this->msop && !$hasOwnPrice && $product['class_key'] === 'msProduct') {
+            $product['price'] = $this->getShowPrice($product);
+        }
+
+        $product['cost'] = $product['price'] * $product['count'];
 
         $this->product = [
             'id' => $product['id'],
@@ -709,13 +731,122 @@ class EventBus
     public function getProductVariant(array $product): array
     {
         $output = [];
-        $modificationId = $product['options']['modification'] ?: $product['modification'];
-        if ($modificationId) {
-            $output = $this->getModificationById((int)$modificationId);
+        if ($modificationId = $this->getModificationId($product)) {
+            $output = $this->getModificationById($modificationId);
         } elseif (isset($product['options'])) {
             $output = $this->getModificationByOptions($product);
         }
         return $this->filterArray($output);
+    }
+
+    /**
+     * Идентификатор выбранной модификации из данных товара.
+     *
+     * Ключ `mid` читается наравне с `modification`: getProductsData() кладёт во
+     * входной массив именно его ($_REQUEST[<id>]['mid'] у карточки листинга), и
+     * раньше выбранная в листинге модификация здесь терялась.
+     *
+     * @param array $product
+     * @return int
+     */
+    public function getModificationId(array $product): int
+    {
+        return (int)($product['options']['modification'] ?? 0)
+            ?: (int)($product['modification'] ?? 0)
+            ?: (int)($product['mid'] ?? 0);
+    }
+
+    /**
+     * Цена показа товара — та, которую покупатель видит в карточке и в листинге.
+     *
+     * Правило расчёта целиком принадлежит msOptionsPrice: getCostByModification()
+     * применяет тип модификации (абсолютная цена, надбавка, скидка, процент),
+     * учитывает настройку msoptionsprice_allow_zero_cost и по пути зовёт события
+     * msopOnBeforeGetCost/msopOnAfterGetCost, поэтому чужие наценки и скидки не
+     * теряются. Здесь только выбор модификации: выбрана — считаем по ней, не
+     * выбрана — берём минимум по активным, модификаций нет — цена товара.
+     *
+     * $isAjax = false отдаёт число, а не отформатированную строку вида "119.00":
+     * цена уходит в дата-слой аналитики, где строка ломает арифметику.
+     *
+     * @param array $product данные ресурса (modResource + msProductData)
+     * @return float
+     */
+    public function getShowPrice(array $product): float
+    {
+        $price = (float)$product['price'];
+        $productId = (int)($product['product_id'] ?: $product['id']);
+        if (!$this->msop || !$productId) {
+            return $price;
+        }
+
+        // Подбор по опциям — только когда опции пришли выбором покупателя, то есть
+        // массивом. У msProductData есть собственное поле options со ВСЕМИ опциями
+        // товара строкой JSON; подбор по нему возвращает произвольную модификацию,
+        // и цена показа получилась бы случайной.
+        if ($modificationId = $this->getModificationId($product)) {
+            $modification = $this->getModificationById($modificationId);
+        } elseif (!empty($product['options']) && is_array($product['options'])) {
+            $modification = $this->getModificationByOptions($product);
+        } else {
+            $modification = [];
+        }
+
+        if ($modification) {
+            return $this->getCostByModification($productId, $price, $modification);
+        }
+
+        $prices = [];
+        foreach ($this->getActiveModifications($productId) as $activeModification) {
+            $prices[] = $this->getCostByModification($productId, $price, $activeModification);
+        }
+        if (!$prices) {
+            return $price;
+        }
+
+        // Нулевая цена модификации — это либо распроданный вариант, либо незаполненная
+        // карточка: показывать её как цену товара нечестно, поэтому минимум берётся
+        // среди положительных. Все нули — отдавать нечего, возвращаем как есть.
+        $positive = array_filter($prices, function ($cost) {
+            return $cost > 0;
+        });
+
+        return $positive ? min($positive) : min($prices);
+    }
+
+    /**
+     * @param int $productId
+     * @param float $price
+     * @param array $modification
+     * @return float
+     */
+    private function getCostByModification(int $productId, float $price, array $modification): float
+    {
+        $cost = $this->msop->getCostByModification($productId, $price, $modification, false);
+
+        // msopOnBeforeGetCost/msopOnAfterGetCost могут отбить расчёт — тогда метод
+        // возвращает не число, а текст ошибки. Цена товара честнее нуля.
+        return is_numeric($cost) ? (float)$cost : $price;
+    }
+
+    /**
+     * Активные модификации товара.
+     *
+     * Без кэша осознанно: цена и активность модификации меняются чаще, чем
+     * сбрасывается кэш пакета, а выборка идёт по индексу rid.
+     *
+     * @param int $productId
+     * @return array
+     */
+    public function getActiveModifications(int $productId): array
+    {
+        $q = $this->modx->newQuery('msopModification');
+        $q->select($this->modx->getSelectColumns('msopModification', 'msopModification'));
+        $q->where([
+            'rid' => $productId,
+            'active' => 1
+        ]);
+        return $this->execute($this->getSQL($q), 'fetchAll') ?: [];
     }
 
     /**

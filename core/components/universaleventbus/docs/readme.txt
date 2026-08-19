@@ -66,11 +66,13 @@ document.addEventListener('eventbus', (event) => {
 - OnBeforeUebHandleEvent (перед получением данные и добавления в очередь): $EventBus, $dispatch
 - OnUebHandleEvent (после получения данных, но перед добавлением в очередь): $output, $EventBus
 - OnUebGetProductData (получение данных о товаре): $product, $EventBus.
+- OnUebGetPageData (получение данных о странице): $pageData, $EventBus.
 - OnGetUebWebConfig (получение конфигурации фронтенда): $webConfig, $EventBus.
 
 Вы можете отменить добавление события в очередь в плагине: $EventBus->dispatch = false.
 Вы можете изменить данные перед отправкой в очередь в плагине: $EventBus->output = [];
 Вы можете изменить данные товара в плагине: $EventBus->product = [];
+Вы можете изменить данные страницы в плагине: $EventBus->pageData = [];
 Вы можете изменить конфигурации фронтенда в плагине: $EventBus->webConfig = [];
 Вы можете изменить получателя в плагине: $EventBus->branch = 'branch_name';
 Вы можете изменить получателя при инициализации: $EventBus = new EventBus($modx, ['branch' => 'branch_name']);

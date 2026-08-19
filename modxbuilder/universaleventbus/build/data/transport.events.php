@@ -18,6 +18,7 @@
  * OnBeforeUebHandleEvent — перед сбором данных ($dispatch, $EventBus)
  * OnUebHandleEvent       — после сбора данных, перед очередью ($options, $output, $EventBus)
  * OnUebGetProductData    — при сборке данных товара ($product, $EventBus)
+ * OnUebGetPageData       — при сборке данных страницы ($pageData, $EventBus)
  * OnGetUebWebConfig      — при сборке конфигурации фронта ($webConfig, $object)
  */
 
@@ -26,6 +27,7 @@ $eventNames = array(
     'OnBeforeUebHandleEvent',
     'OnUebHandleEvent',
     'OnUebGetProductData',
+    'OnUebGetPageData',
     'OnGetUebWebConfig',
 );
 
