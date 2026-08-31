@@ -574,6 +574,15 @@ class EventBus
     }
 
     /**
+     * Изменение позиции считается сравнением актуальной корзины со снимком
+     * предыдущего события.
+     *
+     * ⚠️ Позицию, удалённую целиком, в актуальной корзине уже нет: её поля
+     * приходится брать из снимка. Прежний код на этом и сравнивал снимок сам с
+     * собой — количество после удаления получалось равным количеству до него,
+     * `count_diff` выходил нулём, а `count_change` пустым. Потребители видели
+     * «ничего не изменилось» на полном удалении позиции.
+     *
      * @return array
      */
     public function getCartData(): array
@@ -581,18 +590,24 @@ class EventBus
         if (!($this->miniShop2 instanceof \miniShop2)) {
             return [];
         }
+        $key = $this->properties['key'] ?? '';
         $cart = $this->miniShop2->cart->get();
-        $item = $cart[$this->properties['key']] ?? $_SESSION['ueb']['cart'][$this->properties['key']] ?? [];
-        $oldCount = $_SESSION['ueb']['cart'][$this->properties['key']]['count'] ?? 0;
-        $item['count_change'] = '';
+        $snapshot = $_SESSION['ueb']['cart'][$key] ?? [];
+        $item = $cart[$key] ?? $snapshot;
 
-        if ($oldCount - $item['count'] > 0) {
+        $oldCount = (int) ($snapshot['count'] ?? 0);
+        // Ключа нет в актуальной корзине — позиция удалена целиком, количество после
+        // изменения равно нулю. Поля самого $item остаются снимком: их читает
+        // getProductData() как данные товара, к которому относится событие.
+        $newCount = isset($cart[$key]) ? (int) $item['count'] : 0;
+
+        $item['count_change'] = '';
+        if ($newCount < $oldCount) {
             $item['count_change'] = 'remove';
-        }
-        $item['count_diff'] = abs($item['count'] - $oldCount);
-        if ($oldCount - $item['count'] < 0) {
+        } elseif ($newCount > $oldCount) {
             $item['count_change'] = 'add';
         }
+        $item['count_diff'] = abs($newCount - $oldCount);
 
         $_SESSION['ueb']['cart'] = $cart;
         return [
