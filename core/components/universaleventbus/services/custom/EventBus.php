@@ -6,6 +6,7 @@ namespace UniversalEventBus;
 use UniversalEventBus\Helpers\Logging;
 use UniversalEventBus\Helpers\QueueManager;
 use UniversalEventBus\Helpers\EventStore;
+use UniversalEventBus\Helpers\OrderAccess;
 use Jaybizzle\CrawlerDetect\CrawlerDetect;
 
 /**
@@ -622,7 +623,13 @@ class EventBus
      */
     private function getOrderId(): int
     {
-        $orderId = $_REQUEST['msorder'] ?: $_SESSION['ueb']['msorder'] ?: $_SESSION['ueb']['orderId'] ?? 0;
+        // Id из запроса (и сессионный msorder, который туда пишут проекты) — только свой заказ;
+        // orderId ставит плагин пакета при оформлении в сессии покупателя.
+        $orderId = (int)($_REQUEST['msorder'] ?? 0) ?: (int)($_SESSION['ueb']['msorder'] ?? 0);
+        if ($orderId && !(new OrderAccess($this->modx))->isOwned($orderId)) {
+            $orderId = 0;
+        }
+        $orderId = $orderId ?: (int)($_SESSION['ueb']['orderId'] ?? 0);
         $msOrder = $this->properties['msOrder'] ?: $this->properties['order'];
 
         if ($msOrder instanceof \msOrder) {
