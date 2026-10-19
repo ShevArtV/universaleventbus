@@ -10,7 +10,7 @@ export default class UebBroadcastChannel {
         claim: 'claim',
         release: 'release',
         event: 'event',
-        activity: 'activity',
+        takeover: 'takeover',
       }
     };
     this.tabId = this.createTabId();
@@ -26,7 +26,11 @@ export default class UebBroadcastChannel {
     document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
     this.channel.onmessage = (event) => this.handleMessage(event.data || {});
 
-    if (!document.hidden) {
+    if (document.hidden) return;
+    // The focused tab is where the user acts now: it reads the bus itself.
+    if (document.hasFocus()) {
+      this.takeLead();
+    } else {
       this.electLeader();
     }
   }
@@ -57,10 +61,10 @@ export default class UebBroadcastChannel {
         this.eventBus.receiveTransportEvent(message.data, message.cursor);
       }
       break;
-    case this.config.types.activity:
-      if (this.isLeader) {
-        this.eventBus.onRemoteActivity();
-      }
+    case this.config.types.takeover:
+      this.demote();
+      this.knownLeader = message.tabId;
+      this.clearElectionTimer();
       break;
     }
   }
@@ -105,6 +109,7 @@ export default class UebBroadcastChannel {
   becomeLeader() {
     if (document.hidden || this.isLeader) return;
     this.isLeader = true;
+    this.caughtUp = true;
     this.knownLeader = this.tabId;
     this.channel.postMessage({type: this.config.types.claim, tabId: this.tabId});
     this.eventBus.setTransportLeader(true);
@@ -130,9 +135,18 @@ export default class UebBroadcastChannel {
     this.electLeader();
   }
 
-  notifyActivity() {
-    if (this.isLeader) return;
-    this.channel.postMessage({type: this.config.types.activity, tabId: this.tabId});
+  /**
+   * The tab where the user acts takes the lead at once: events caused by the
+   * action then come from its own transport, not from another window.
+   */
+  takeLead() {
+    if (document.hidden || this.isLeader) return;
+    this.clearElectionTimer();
+    this.isLeader = true;
+    this.caughtUp = true;
+    this.knownLeader = this.tabId;
+    this.channel.postMessage({type: this.config.types.takeover, tabId: this.tabId});
+    this.eventBus.setTransportLeader(true);
   }
 
   broadcastEvent(data, cursor) {

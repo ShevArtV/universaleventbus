@@ -70,12 +70,6 @@ class EventBus {
     }
   }
 
-  onRemoteActivity() {
-    if (this.transport) {
-      this.transport.notifyActivity();
-    }
-  }
-
   initializeLegacyEventSource() {
     if (document.hidden || this.eventSource) return;
     this.eventSource = new EventSource(this.config.handlerPath + '?mode=legacy');
@@ -100,6 +94,13 @@ class EventBus {
     const eventId = data.eventId ? String(data.eventId) : '';
     if (eventId && this.receivedEventIds.has(eventId)) return;
 
+    const relayed = !broadcast && !replay;
+    // A relayed event is already read: a follower that later takes the lead
+    // must not read it again from its own, older cursor.
+    if (relayed && this.transport && this.broadcastChannel && this.broadcastChannel.caughtUp) {
+      this.transport.setCursor(cursor);
+    }
+
     // A replayed event is not remembered: the live copy from the leader must
     // still reach regular listeners.
     if (eventId && !replay) {
@@ -114,11 +115,25 @@ class EventBus {
       detail: {
         data: data,
         lastEventId: String(cursor || ''),
+        own: this.isOwnEvent(data, broadcast),
       }
     }));
     if (broadcast && this.broadcastChannel) {
       this.broadcastChannel.broadcastEvent(data, cursor);
     }
+  }
+
+  /**
+   * Whether the event belongs to this tab. Page render events carry the id of
+   * the page they were rendered for. Other events are caused by the user, and
+   * the tab where the user acts leads the bus, so they belong to the tab that
+   * read them from its own transport.
+   */
+  isOwnEvent(data, fromOwnTransport) {
+    if (data.pageId) {
+      return data.pageId === this.config.pageId;
+    }
+    return fromOwnTransport;
   }
 
   pruneReceivedEventIds() {
@@ -132,14 +147,7 @@ class EventBus {
   }
 
   addActivityListeners() {
-    const activity = () => {
-      if (this.transport) {
-        this.transport.notifyActivity();
-      }
-      if (this.broadcastChannel) {
-        this.broadcastChannel.notifyActivity();
-      }
-    };
+    const activity = () => this.notifyActivity();
     document.addEventListener('pointerdown', activity, {passive: true});
     document.addEventListener('keydown', activity, {passive: true});
     window.addEventListener('focus', activity, {passive: true});
@@ -294,13 +302,17 @@ class EventBus {
     return false;
   }
 
-  async sendEvent(target, paramsObj = {}) {
+  notifyActivity() {
+    if (this.broadcastChannel) {
+      this.broadcastChannel.takeLead();
+    }
     if (this.transport) {
       this.transport.notifyActivity();
     }
-    if (this.broadcastChannel) {
-      this.broadcastChannel.notifyActivity();
-    }
+  }
+
+  async sendEvent(target, paramsObj = {}) {
+    this.notifyActivity();
     const forceKeepalive = paramsObj.keepalive === true;
     paramsObj.eventName = paramsObj.eventName || target.dataset[this.config.eventKey];
     paramsObj = Object.assign(paramsObj, this.getParams(target));

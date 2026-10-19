@@ -44,7 +44,6 @@ function createEventBus() {
   return {
     leadership: [],
     received: [],
-    remoteActivities: 0,
     catchUps: 0,
     catchUp() {
       this.catchUps++;
@@ -56,13 +55,10 @@ function createEventBus() {
     receiveTransportEvent(data, cursor) {
       this.received.push({data, cursor});
     },
-    onRemoteActivity() {
-      this.remoteActivities++;
-    },
   };
 }
 
-test('one tab owns transport and relays events/activity', async () => {
+test('one tab owns transport, relays events and yields it to the active tab', async () => {
   const timers = new FakeTimers();
   let uuid = 0;
   FakeChannel.channels = [];
@@ -73,6 +69,10 @@ test('one tab owns transport and relays events/activity', async () => {
   };
   globalThis.document = {
     hidden: false,
+    focused: false,
+    hasFocus() {
+      return this.focused;
+    },
     addEventListener() {},
   };
   globalThis.BroadcastChannel = FakeChannel;
@@ -97,6 +97,22 @@ test('one tab owns transport and relays events/activity', async () => {
   first.broadcastEvent({eventId: 'evt-1'}, 12);
   assert.deepEqual(secondBus.received, [{data: {eventId: 'evt-1'}, cursor: 12}]);
 
-  second.notifyActivity();
-  assert.equal(firstBus.remoteActivities, 1);
+  // The user acts in the second tab: it takes the lead, the first one yields.
+  second.takeLead();
+  assert.equal(second.isLeader, true);
+  assert.equal(first.isLeader, false);
+  assert.equal(first.knownLeader, second.tabId);
+  assert.deepEqual(firstBus.leadership, [true, false]);
+  assert.deepEqual(secondBus.leadership, [true]);
+
+  second.broadcastEvent({eventId: 'evt-2'}, 13);
+  assert.deepEqual(firstBus.received, [{data: {eventId: 'evt-2'}, cursor: 13}]);
+
+  // A tab opened with focus leads at once, without an election.
+  document.focused = true;
+  const thirdBus = createEventBus();
+  const third = new UebBroadcastChannel(thirdBus);
+  assert.equal(third.isLeader, true);
+  assert.equal(second.isLeader, false);
+  assert.equal(thirdBus.catchUps, 0);
 });

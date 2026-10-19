@@ -89,6 +89,10 @@ class EventBus
      */
     public ?\miniShop2 $miniShop2 = null;
     /**
+     * Id of the current page load: one per PHP request, shared by all instances.
+     */
+    private static string $pageId = '';
+    /**
      * @var array $webConfig
      */
     public array $webConfig;
@@ -253,6 +257,7 @@ class EventBus
             'navigationTimeout' => (int) $this->modx->getOption('ueb_navigation_timeout', null, 1200),
             'openClasses' => $openClasses ? explode(',', $openClasses) : [],
             'closeClasses' => $closeClasses ? explode(',', $closeClasses) : [],
+            'pageId' => self::getPageId(),
         ];
 
         $this->modx->invokeEvent('OnGetUebWebConfig', [
@@ -287,12 +292,22 @@ class EventBus
         return $q->stmt->fetchColumn();
     }
 
+    public static function getPageId(): string
+    {
+        if (self::$pageId === '') {
+            self::$pageId = bin2hex(random_bytes(8));
+        }
+        return self::$pageId;
+    }
+
     /**
      * @param string $eventName
      * @return bool
      */
     public function handleEvent(string $eventName): bool
     {
+        // Read before plugins below run: invokeEvent() rewrites modx->event.
+        $isPageRender = ($this->modx->event->name ?? '') === 'OnLoadWebDocument';
         $this->ctx = $_COOKIE[$this->contextCookieName] ?: $_REQUEST[$this->requestContextParam] ?: $this->modx->context->get('key');
         if ($this->ctx && $this->ctx !== $this->modx->context->get('key') && $this->modx->getCount($this->ctx)) {
             $this->modx->switchContext($this->ctx);
@@ -322,6 +337,10 @@ class EventBus
             'productsData' => [],
             'pushed' => []
         ];
+        // Page render events belong to the tab with this page, not to whichever tab leads the bus.
+        if ($isPageRender) {
+            $this->output['pageId'] = self::getPageId();
+        }
         $this->output['userData'] = $this->getUserData($this->getUserId());
         $this->output['productsData'] = $this->getProductsData($eventName);
 
