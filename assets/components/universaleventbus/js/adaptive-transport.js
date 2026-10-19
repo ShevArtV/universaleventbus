@@ -247,7 +247,28 @@ export default class AdaptiveTransport {
     return url.toString();
   }
 
+  /**
+   * A new tab starts at the stream position before its page was rendered, not
+   * at the start of the stream: older events belong to other tabs. A tab keeps
+   * its cursor across its pages, but not past the start of the new page: the
+   * previous page may still read the stream while the next one renders and
+   * take the new page's render events.
+   */
   readCursor() {
+    const stored = this.readStoredCursor();
+    const start = this.toPositiveInt(this.config.startCursor, 0);
+    if (!start) return stored;
+    return stored ? Math.min(stored, start) : start;
+  }
+
+  /**
+   * A page restored from bfcache resumes after the pages that ran in this tab meanwhile.
+   */
+  resumeStoredCursor() {
+    this.setCursor(this.readStoredCursor());
+  }
+
+  readStoredCursor() {
     try {
       return this.toPositiveInt(this.storage.getItem(this.config.cursorStorageKey), 0);
     } catch {

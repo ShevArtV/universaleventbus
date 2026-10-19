@@ -93,6 +93,10 @@ class EventBus
      */
     private static string $pageId = '';
     /**
+     * Stream position before this page published anything: a new tab starts here.
+     */
+    private static ?int $startCursor = null;
+    /**
      * @var array $webConfig
      */
     public array $webConfig;
@@ -258,6 +262,7 @@ class EventBus
             'openClasses' => $openClasses ? explode(',', $openClasses) : [],
             'closeClasses' => $closeClasses ? explode(',', $closeClasses) : [],
             'pageId' => self::getPageId(),
+            'startCursor' => $this->getStartCursor(),
         ];
 
         $this->modx->invokeEvent('OnGetUebWebConfig', [
@@ -290,6 +295,24 @@ class EventBus
             return '';
         }
         return $q->stmt->fetchColumn();
+    }
+
+    private function getStartCursor(): int
+    {
+        if (self::$startCursor === null) {
+            $legacy = $this->modx->getOption('ueb_transport', null, 'adaptive') === 'legacy';
+            self::$startCursor = $legacy ? 0 : $this->eventstore->headCursor($this->branch);
+        }
+        return self::$startCursor;
+    }
+
+    /**
+     * Key of the browser tab that sent the event from its page (UEB JS sendEvent).
+     */
+    private function getTabKey(): string
+    {
+        $tabKey = (string) ($this->properties['uebTabKey'] ?? '');
+        return preg_match('/^[a-zA-Z0-9-]{8,64}$/', $tabKey) ? $tabKey : '';
     }
 
     public static function getPageId(): string
@@ -339,7 +362,13 @@ class EventBus
         ];
         // Page render events belong to the tab with this page, not to whichever tab leads the bus.
         if ($isPageRender) {
+            $this->getStartCursor();
             $this->output['pageId'] = self::getPageId();
+        }
+        // Events sent from a page belong to the tab that sent them.
+        $tabKey = $this->getTabKey();
+        if ($tabKey !== '') {
+            $this->output['tabKey'] = $tabKey;
         }
         $this->output['userData'] = $this->getUserData($this->getUserId());
         $this->output['productsData'] = $this->getProductsData($eventName);

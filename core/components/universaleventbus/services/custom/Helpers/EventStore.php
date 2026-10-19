@@ -138,6 +138,26 @@ class EventStore
     }
 
     /**
+     * The last cursor of the branch: a new tab starts reading after it.
+     */
+    public function headCursor(string $branch): int
+    {
+        if ($branch === '') {
+            return 0;
+        }
+
+        $sql = "SELECT MAX(`id`) FROM {$this->table} WHERE `branch_hash` = :branch_hash";
+        $stmt = $this->modx->prepare($sql);
+        if (!$stmt || !$stmt->execute([':branch_hash' => $this->hashBranch($branch)])) {
+            return 0;
+        }
+        $head = (int) $stmt->fetchColumn();
+        $stmt->closeCursor();
+
+        return $head;
+    }
+
+    /**
      * A cursor is accepted only when it belongs to the current branch. This
      * prevents a stale sessionStorage cursor from acknowledging/skipping events
      * after PHP session regeneration or a custom branch switch.

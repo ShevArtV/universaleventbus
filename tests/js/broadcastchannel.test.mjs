@@ -115,4 +115,20 @@ test('one tab owns transport, relays events and yields it to the active tab', as
   assert.equal(third.isLeader, true);
   assert.equal(second.isLeader, false);
   assert.equal(thirdBus.catchUps, 0);
+
+  // The leader leaves: visible windows do not grab the stream.
+  document.focused = false;
+  third.handleMessage({type: 'release', tabId: 'gone'});
+  second.handleMessage({type: 'release', tabId: third.tabId});
+  timers.runAll();
+  assert.equal(second.isLeader, false);
+  assert.equal(second.knownLeader, null);
+
+  // A duplicated tab with the same key takes a new one.
+  const key = second.tabKey;
+  const dupe = new UebBroadcastChannel(createEventBus());
+  dupe.tabKey = key;
+  dupe.channel.postMessage({type: 'hello', tabId: dupe.tabId, tabKey: key});
+  assert.equal(second.tabKey, key);
+  assert.notEqual(dupe.tabKey, key);
 });

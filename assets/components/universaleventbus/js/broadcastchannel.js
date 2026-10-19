@@ -3,6 +3,7 @@ export default class UebBroadcastChannel {
     this.eventBus = eventBus;
     this.config = {
       channelName: 'ueb',
+      tabKeyStorageKey: 'ueb_tab_key',
       electionDelay: 120,
       types: {
         ping: 'ping',
@@ -11,9 +12,12 @@ export default class UebBroadcastChannel {
         release: 'release',
         event: 'event',
         takeover: 'takeover',
+        hello: 'hello',
+        tabKeyTaken: 'tab-key-taken',
       }
     };
     this.tabId = this.createTabId();
+    this.tabKey = this.readTabKey();
     this.isLeader = false;
     this.knownLeader = null;
     this.electionTimer = null;
@@ -25,6 +29,8 @@ export default class UebBroadcastChannel {
     this.channel = new BroadcastChannel(this.config.channelName);
     document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
     this.channel.onmessage = (event) => this.handleMessage(event.data || {});
+    // A duplicated tab inherits sessionStorage: a live tab with the same key makes it take a new one.
+    this.channel.postMessage({type: this.config.types.hello, tabId: this.tabId, tabKey: this.tabKey});
 
     if (document.hidden) return;
     // The focused tab is where the user acts now: it reads the bus itself.
@@ -49,11 +55,20 @@ export default class UebBroadcastChannel {
       this.handleLeaderClaim(message.tabId);
       break;
     case this.config.types.release:
+      // The stream waits for the tab where the user acts next: a leaving page's
+      // events belong to its tab, not to whichever window happens to be visible.
       if (this.knownLeader === message.tabId) {
         this.knownLeader = null;
       }
-      if (!document.hidden) {
-        this.electLeader();
+      break;
+    case this.config.types.hello:
+      if (message.tabKey === this.tabKey) {
+        this.channel.postMessage({type: this.config.types.tabKeyTaken, tabId: this.tabId, tabKey: this.tabKey});
+      }
+      break;
+    case this.config.types.tabKeyTaken:
+      if (message.tabKey === this.tabKey) {
+        this.tabKey = this.createTabKey();
       }
       break;
     case this.config.types.event:
@@ -132,7 +147,11 @@ export default class UebBroadcastChannel {
       this.clearElectionTimer();
       return;
     }
-    this.electLeader();
+    if (document.hasFocus()) {
+      this.takeLead();
+    } else {
+      this.electLeader();
+    }
   }
 
   /**
@@ -163,6 +182,26 @@ export default class UebBroadcastChannel {
     if (this.electionTimer === null) return;
     window.clearTimeout(this.electionTimer);
     this.electionTimer = null;
+  }
+
+  readTabKey() {
+    try {
+      const stored = window.sessionStorage.getItem(this.config.tabKeyStorageKey);
+      if (stored) return stored;
+    } catch {
+      // Without sessionStorage the key lives as long as the page.
+    }
+    return this.createTabKey();
+  }
+
+  createTabKey() {
+    const tabKey = this.createTabId();
+    try {
+      window.sessionStorage.setItem(this.config.tabKeyStorageKey, tabKey);
+    } catch {
+      // Same as above.
+    }
+    return tabKey;
   }
 
   createTabId() {

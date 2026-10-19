@@ -40,6 +40,11 @@ class EventBus {
       this.addObservers(eventTargets);
     }
     this.addActivityListeners();
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted && this.transport) {
+        this.transport.resumeStoredCursor();
+      }
+    });
   }
 
   setTransportLeader(isLeader) {
@@ -125,13 +130,17 @@ class EventBus {
 
   /**
    * Whether the event belongs to this tab. Page render events carry the id of
-   * the page they were rendered for. Other events are caused by the user, and
-   * the tab where the user acts leads the bus, so they belong to the tab that
-   * read them from its own transport.
+   * the page they were rendered for, events sent from a page carry the key of
+   * its tab. Other events (AJAX of other components) are caused by the user,
+   * and the tab where the user acts leads the bus, so they belong to the tab
+   * that read them from its own transport.
    */
   isOwnEvent(data, fromOwnTransport) {
     if (data.pageId) {
       return data.pageId === this.config.pageId;
+    }
+    if (data.tabKey) {
+      return Boolean(this.broadcastChannel) && data.tabKey === this.broadcastChannel.tabKey;
     }
     return fromOwnTransport;
   }
@@ -313,6 +322,9 @@ class EventBus {
 
   async sendEvent(target, paramsObj = {}) {
     this.notifyActivity();
+    if (this.broadcastChannel) {
+      paramsObj.uebTabKey = this.broadcastChannel.tabKey;
+    }
     const forceKeepalive = paramsObj.keepalive === true;
     paramsObj.eventName = paramsObj.eventName || target.dataset[this.config.eventKey];
     paramsObj = Object.assign(paramsObj, this.getParams(target));
