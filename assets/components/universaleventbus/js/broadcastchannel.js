@@ -17,6 +17,7 @@ export default class UebBroadcastChannel {
     this.isLeader = false;
     this.knownLeader = null;
     this.electionTimer = null;
+    this.caughtUp = false;
     this.initialize();
   }
 
@@ -80,6 +81,12 @@ export default class UebBroadcastChannel {
 
     this.knownLeader = tabId;
     this.clearElectionTimer();
+    // Events published while this page rendered may already be taken by the
+    // leader before this tab listened to the channel.
+    if (!this.caughtUp) {
+      this.caughtUp = true;
+      this.eventBus.catchUp();
+    }
   }
 
   electLeader() {

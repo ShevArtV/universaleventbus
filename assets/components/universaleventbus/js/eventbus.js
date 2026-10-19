@@ -8,6 +8,7 @@ class EventBus {
       eventAttr: 'data-ueb-event',
       eventKey: 'uebEvent',
       dispatchEvent: 'eventbus',
+      replayEvent: 'eventbus:replay',
       beforeSendEvent: 'eventbus:before:send',
       onceKey: 'uebOnce',
       paramsKey: 'uebParams',
@@ -25,6 +26,7 @@ class EventBus {
       ? null
       : new AdaptiveTransport(this.config, {
         onEvent: (data, cursor) => this.receiveTransportEvent(data, cursor, true),
+        onReplay: (data, cursor) => this.receiveTransportEvent(data, cursor, false, true),
       });
     this.broadcastChannel = new UebBroadcastChannel(this);
     this.initialize();
@@ -62,6 +64,12 @@ class EventBus {
     }
   }
 
+  catchUp() {
+    if (this.transport) {
+      this.transport.catchUp().then();
+    }
+  }
+
   onRemoteActivity() {
     if (this.transport) {
       this.transport.notifyActivity();
@@ -87,16 +95,20 @@ class EventBus {
     this.eventSource = null;
   }
 
-  receiveTransportEvent(data, cursor, broadcast = false) {
+  receiveTransportEvent(data, cursor, broadcast = false, replay = false) {
     if (!data || typeof data !== 'object') return;
     const eventId = data.eventId ? String(data.eventId) : '';
     if (eventId && this.receivedEventIds.has(eventId)) return;
 
-    if (eventId) {
+    // A replayed event is not remembered: the live copy from the leader must
+    // still reach regular listeners.
+    if (eventId && !replay) {
       this.receivedEventIds.set(eventId, Date.now());
       this.pruneReceivedEventIds();
     }
-    document.dispatchEvent(new CustomEvent(this.config.dispatchEvent, {
+    // Replayed events go under a separate name: existing listeners must not
+    // react twice to cart/order events another tab has already handled.
+    document.dispatchEvent(new CustomEvent(replay ? this.config.replayEvent : this.config.dispatchEvent, {
       bubbles: false,
       cancelable: false,
       detail: {

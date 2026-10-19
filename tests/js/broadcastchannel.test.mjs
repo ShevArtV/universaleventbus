@@ -45,6 +45,10 @@ function createEventBus() {
     leadership: [],
     received: [],
     remoteActivities: 0,
+    catchUps: 0,
+    catchUp() {
+      this.catchUps++;
+    },
     setTransportLeader(value) {
       this.leadership.push(value);
     },
@@ -86,6 +90,9 @@ test('one tab owns transport and relays events/activity', async () => {
   timers.runAll();
   assert.equal(first.isLeader, true);
   assert.equal(second.isLeader, false);
+
+  assert.equal(firstBus.catchUps, 0);
+  assert.equal(secondBus.catchUps, 1);
 
   first.broadcastEvent({eventId: 'evt-1'}, 12);
   assert.deepEqual(secondBus.received, [{data: {eventId: 'evt-1'}, cursor: 12}]);

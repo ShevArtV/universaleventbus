@@ -12,6 +12,7 @@ export default class AdaptiveTransport {
     }, config);
 
     this.onEvent = callbacks.onEvent || (() => {});
+    this.onReplay = callbacks.onReplay || (() => {});
     this.onStateChange = callbacks.onStateChange || (() => {});
     this.fetchFn = dependencies.fetch || window.fetch.bind(window);
     this.EventSourceClass = dependencies.EventSource || window.EventSource;
@@ -192,6 +193,32 @@ export default class AdaptiveTransport {
     const factor = Number(this.config.cursorPollFactor) > 1 ? Number(this.config.cursorPollFactor) : 2;
     this.pollDelay = Math.min(maxDelay, Math.round(this.pollDelay * factor));
     this.schedulePoll(this.pollDelay);
+  }
+
+  /**
+   * One-shot read for a follower tab. The leader may consume events published
+   * while this page was rendering before this tab joins the channel, so the
+   * broadcast never reaches it. Replayed events are not relayed further.
+   */
+  async catchUp() {
+    try {
+      const response = await this.fetchFn(this.buildUrl('poll'), {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      const events = Array.isArray(result.events) ? result.events : [];
+      for (const event of events) {
+        if (!event.data || typeof event.data !== 'object') continue;
+        this.setCursor(event.cursor);
+        this.onReplay(event.data, this.cursor);
+      }
+      this.setCursor(result.cursor);
+    } catch {
+      // Catch-up is best effort; live delivery still comes from the leader.
+    }
   }
 
   acceptEvent(data, cursor) {

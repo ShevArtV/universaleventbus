@@ -63,6 +63,7 @@ function createTransport(overrides = {}) {
   FakeEventSource.instances = [];
   const timers = new FakeTimers();
   const events = [];
+  const replays = [];
   const states = [];
   const fetchCalls = [];
   const responses = overrides.responses || [];
@@ -83,6 +84,7 @@ function createTransport(overrides = {}) {
     cursorPollJitter: 0,
   }, {
     onEvent: (data, cursor) => events.push({data, cursor}),
+    onReplay: (data, cursor) => replays.push({data, cursor}),
     onStateChange: (state) => states.push(state),
   }, {
     fetch,
@@ -94,7 +96,7 @@ function createTransport(overrides = {}) {
     clearTimeout: timers.clearTimeout.bind(timers),
     random: () => 0.5,
   });
-  return {transport, timers, events, states, fetchCalls};
+  return {transport, timers, events, replays, states, fetchCalls};
 }
 
 test('active SSE becomes cursor polling after idle and reopens on activity', async () => {
@@ -170,4 +172,24 @@ test('SSE message advances cursor and resets idle timeout', () => {
   assert.equal(transport.cursor, 7);
   assert.deepEqual(events, [{data: {eventId: 'event-7'}, cursor: 7}]);
   assert.deepEqual(timers.delays(), [30000]);
+});
+
+test('follower catch-up replays missed events once without opening a stream', async () => {
+  const {transport, events, replays, fetchCalls} = createTransport({
+    responses: [{
+      success: true,
+      cursor: 7,
+      events: [{cursor: 7, data: {eventId: 'detail-7'}}],
+    }],
+  });
+
+  await transport.catchUp();
+
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0], /mode=poll/);
+  assert.deepEqual(replays, [{data: {eventId: 'detail-7'}, cursor: 7}]);
+  assert.deepEqual(events, []);
+  assert.equal(transport.cursor, 7);
+  assert.equal(transport.state, 'paused');
+  assert.equal(FakeEventSource.instances.length, 0);
 });
