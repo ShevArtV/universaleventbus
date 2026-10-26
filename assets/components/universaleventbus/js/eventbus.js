@@ -1,5 +1,9 @@
-import UebBroadcastChannel from './broadcastchannel.js';
-import AdaptiveTransport from './adaptive-transport.js';
+// Child modules are requested with the same ?v= as this file: a CDN or browser
+// cache keys by the full URL, so after a package update an old module cannot be
+// served to the new bus.
+const version = new URL(import.meta.url).search;
+let UebBroadcastChannel;
+let AdaptiveTransport;
 
 class EventBus {
   constructor() {
@@ -440,6 +444,22 @@ class EventBus {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+const domReady = new Promise((resolve) => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', resolve, {once: true});
+  } else {
+    resolve();
+  }
+});
+
+Promise.all([
+  import(`./broadcastchannel.js${version}`),
+  import(`./adaptive-transport.js${version}`),
+  domReady,
+]).then(([broadcastChannelModule, adaptiveTransportModule]) => {
+  UebBroadcastChannel = broadcastChannelModule.default;
+  AdaptiveTransport = adaptiveTransportModule.default;
   new EventBus();
+}).catch((error) => {
+  console.error('[UniversalEventBus] the bus did not start: failed to load its modules or to initialize', error);
 });
