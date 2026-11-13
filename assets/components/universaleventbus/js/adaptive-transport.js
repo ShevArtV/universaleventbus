@@ -32,6 +32,9 @@ export default class AdaptiveTransport {
     this.reconnectTimer = null;
     this.pollDelay = this.toPositiveInt(this.config.cursorPollInitial, 2000);
     this.cursor = this.readCursor();
+    // poll-only: no SSE at all, delivery only by cursor polling.
+    this.pollOnly = this.config.transport === 'poll';
+    this.polling = false;
   }
 
   setLeader(isLeader) {
@@ -68,10 +71,26 @@ export default class AdaptiveTransport {
 
   enterActive() {
     if (!this.isLeader || !this.isVisible) return;
+    if (this.pollOnly) {
+      this.enterActivePoll();
+      return;
+    }
     this.clearPollTimer();
     this.setState('active_sse');
     this.openStream();
     this.scheduleIdle();
+  }
+
+  // poll-only activity window: no stream, constant short pause between polls.
+  // Only entering the window polls immediately; further activity just extends it.
+  enterActivePoll() {
+    const entering = this.state !== 'active_poll';
+    this.setState('active_poll');
+    this.scheduleIdle();
+    if (!entering) return;
+    this.pollDelay = this.toPositiveInt(this.config.cursorPollInitial, 2000);
+    this.clearPollTimer();
+    this.poll();
   }
 
   enterIdle() {
@@ -79,6 +98,11 @@ export default class AdaptiveTransport {
     this.closeStream();
     this.clearReconnectTimer();
     this.setState('idle_poll');
+    if (this.pollOnly && (this.pollTimer !== null || this.polling)) {
+      // The poll planned inside the window stays as is; the pause starts
+      // growing from the first empty poll after the window.
+      return;
+    }
     this.schedulePoll(this.pollDelay);
   }
 
@@ -91,7 +115,7 @@ export default class AdaptiveTransport {
   }
 
   openStream() {
-    if (this.eventSource || !this.isLeader || !this.isVisible || this.state !== 'active_sse') {
+    if (this.pollOnly || this.eventSource || !this.isLeader || !this.isVisible || this.state !== 'active_sse') {
       return;
     }
 
@@ -151,16 +175,21 @@ export default class AdaptiveTransport {
 
   schedulePoll(delay) {
     this.clearPollTimer();
-    if (!this.isLeader || !this.isVisible || this.state !== 'idle_poll') return;
+    if (!this.isLeader || !this.isVisible || !this.canPoll()) return;
     this.pollTimer = this.setTimer(() => {
       this.pollTimer = null;
       this.poll();
     }, this.withJitter(delay));
   }
 
-  async poll() {
-    if (!this.isLeader || !this.isVisible || this.state !== 'idle_poll') return;
+  canPoll() {
+    return this.state === 'idle_poll' || (this.pollOnly && this.state === 'active_poll');
+  }
 
+  async poll() {
+    if (!this.isLeader || !this.isVisible || !this.canPoll() || this.polling) return;
+
+    this.polling = true;
     let hasEvents = false;
     try {
       const response = await this.fetchFn(this.buildUrl('poll'), {
@@ -181,11 +210,28 @@ export default class AdaptiveTransport {
       this.setCursor(result.cursor);
     } catch {
       hasEvents = false;
+    } finally {
+      this.polling = false;
     }
 
+    const initial = this.toPositiveInt(this.config.cursorPollInitial, 2000);
     if (hasEvents) {
-      this.pollDelay = this.toPositiveInt(this.config.cursorPollInitial, 2000);
+      this.pollDelay = initial;
+      if (this.pollOnly) {
+        if (this.isLeader && this.isVisible) {
+          this.setState('active_poll');
+          this.scheduleIdle();
+        }
+        this.schedulePoll(initial);
+        return;
+      }
       this.enterActive();
+      return;
+    }
+    // State at the moment of the answer decides: inside the window the pause
+    // does not grow.
+    if (this.pollOnly && this.state === 'active_poll') {
+      this.schedulePoll(initial);
       return;
     }
 

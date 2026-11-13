@@ -67,7 +67,7 @@ function createTransport(overrides = {}) {
   const states = [];
   const fetchCalls = [];
   const responses = overrides.responses || [];
-  const fetch = async (url) => {
+  const fetch = overrides.fetch ? (url) => { fetchCalls.push(url); return overrides.fetch(url); } : async (url) => {
     fetchCalls.push(url);
     const result = responses.shift() || {success: true, cursor: 0, events: []};
     return {
@@ -76,13 +76,13 @@ function createTransport(overrides = {}) {
       json: async () => result,
     };
   };
-  const transport = new AdaptiveTransport({
+  const transport = new AdaptiveTransport(Object.assign({
     handlerPath: '/ssehandler.php',
     streamIdleTimeout: 30000,
     cursorPollInitial: 2000,
     cursorPollMax: 30000,
     cursorPollJitter: 0,
-  }, {
+  }, overrides.config || {}), {
     onEvent: (data, cursor) => events.push({data, cursor}),
     onReplay: (data, cursor) => replays.push({data, cursor}),
     onStateChange: (state) => states.push(state),
@@ -94,7 +94,7 @@ function createTransport(overrides = {}) {
     storage: createStorage(),
     setTimeout: timers.setTimeout.bind(timers),
     clearTimeout: timers.clearTimeout.bind(timers),
-    random: () => 0.5,
+    random: overrides.random || (() => 0.5),
   });
   return {transport, timers, events, replays, states, fetchCalls};
 }
@@ -192,4 +192,125 @@ test('follower catch-up replays missed events once without opening a stream', as
   assert.equal(transport.cursor, 7);
   assert.equal(transport.state, 'paused');
   assert.equal(FakeEventSource.instances.length, 0);
+});
+
+const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+const pollCfg = (extra = {}) => ({config: Object.assign({transport: 'poll', streamIdleTimeout: 2000}, extra)});
+const eventResponse = (cursor) => ({success: true, cursor, events: [{cursor, data: {eventId: `e${cursor}`}}]});
+
+test('poll mode: no EventSource, immediate poll on activation, pause does not grow in window', async () => {
+  const {transport, timers, fetchCalls} = createTransport(pollCfg());
+  transport.setLeader(true);
+  await flush();
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.equal(transport.state, 'active_poll');
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0], /mode=poll/);
+  assert.equal(transport.pollDelay, 2000);
+  assert.deepEqual(timers.delays().sort(), [2000, 2000]);
+});
+
+for (const order of ['window-ends-first', 'poll-first']) {
+  test(`poll mode: event 300ms after click is delivered by the poll planned at <=2.4s (${order})`, async () => {
+    const {transport, timers, events} = createTransport(Object.assign(pollCfg({cursorPollJitter: 0.2}), {
+      random: () => 1, // jitter +20%
+      responses: [{success: true, cursor: 0, events: []}, eventResponse(5)],
+    }));
+    transport.setLeader(true); // click-like entering: immediate empty poll
+    await flush();
+    const plannedPoll = transport.pollTimer;
+    assert.notEqual(plannedPoll, null);
+    assert.ok(timers.delays().includes(2400));
+
+    if (order === 'window-ends-first') {
+      timers.runDelay(2000); // idleTimer fires before pollTimer
+      assert.equal(transport.state, 'idle_poll');
+      assert.equal(transport.pollTimer, plannedPoll, 'planned poll is not re-armed');
+    }
+    timers.runDelay(2400);
+    await flush();
+    assert.equal(events.length, 1);
+    assert.equal(events[0].data.eventId, 'e5');
+    assert.equal(FakeEventSource.instances.length, 0);
+    assert.equal(transport.state, 'active_poll');
+    assert.equal(transport.pollDelay, 2000);
+  });
+}
+
+test('poll mode: repeated activity extends the window without an extra poll', async () => {
+  const {transport, fetchCalls} = createTransport(pollCfg());
+  transport.setLeader(true);
+  await flush();
+  transport.notifyActivity();
+  transport.notifyActivity();
+  await flush();
+  assert.equal(fetchCalls.length, 1);
+});
+
+test('poll mode: no second poll while one is in flight', async () => {
+  let release;
+  const {transport, fetchCalls} = createTransport(Object.assign(pollCfg(), {
+    fetch: () => new Promise((resolve) => {
+      release = () => resolve({ok: true, status: 200, json: async () => ({success: true, cursor: 0, events: []})});
+    }),
+  }));
+  transport.setLeader(true);
+  assert.equal(fetchCalls.length, 1);
+  transport.enterIdle();
+  transport.notifyActivity(); // enters the window again while the poll is pending
+  assert.equal(fetchCalls.length, 1);
+  release();
+  await flush();
+  assert.equal(transport.polling, false);
+});
+
+test('poll mode: pause grows 2s -> 30s only after the window', async () => {
+  const {transport, timers} = createTransport(pollCfg());
+  transport.setLeader(true);
+  await flush();
+  timers.runDelay(2000); // window ends; the planned poll stays
+  assert.equal(transport.state, 'idle_poll');
+  assert.equal(transport.pollDelay, 2000);
+  timers.runDelay(2000); // planned poll: empty, pause grows
+  await flush();
+  assert.equal(transport.pollDelay, 4000);
+  assert.deepEqual(timers.delays(), [4000]);
+  assert.equal(FakeEventSource.instances.length, 0);
+});
+
+test('poll mode: answer arriving after the window ends is judged by the state at answer time', async () => {
+  let release;
+  const {transport, timers} = createTransport(Object.assign(pollCfg(), {
+    fetch: () => new Promise((resolve) => {
+      release = () => resolve({ok: true, status: 200, json: async () => ({success: true, cursor: 0, events: []})});
+    }),
+  }));
+  transport.setLeader(true);
+  timers.runDelay(2000); // window ends while the poll is in flight
+  assert.equal(transport.state, 'idle_poll');
+  release();
+  await flush();
+  assert.equal(transport.pollDelay, 4000);
+});
+
+test('poll mode: events from an idle poll open a window, never a stream', async () => {
+  const {transport, events} = createTransport(Object.assign(pollCfg({streamIdleTimeout: 30000}), {
+    responses: [eventResponse(9)],
+  }));
+  transport.setLeader(true);
+  transport.enterIdle();
+  transport.pollDelay = 8000;
+  await flush();
+  assert.equal(events.length, 1);
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.equal(transport.pollDelay, 2000);
+});
+
+test('poll mode: pause clears all timers', async () => {
+  const {transport, timers} = createTransport(pollCfg());
+  transport.setLeader(true);
+  await flush();
+  transport.pause();
+  assert.deepEqual(timers.delays(), []);
+  assert.equal(transport.state, 'paused');
 });

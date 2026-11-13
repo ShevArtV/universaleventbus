@@ -78,7 +78,7 @@ document.addEventListener('eventbus', (event) => {
 Вы можете изменить получателя при инициализации: $EventBus = new EventBus($modx, ['branch' => 'branch_name']);
 
 Основные настройки adaptive transport:
-- ueb_transport: adaptive или legacy;
+- ueb_transport: adaptive, poll (без SSE-потоков, только cursor polling) или legacy;
 - ueb_stream_duration: максимальная длительность одного SSE-запроса, секунды;
 - ueb_stream_heartbeat: интервал heartbeat, секунды;
 - ueb_stream_read_interval: интервал проверки EventStore внутри SSE, миллисекунды;

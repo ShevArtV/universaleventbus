@@ -63,6 +63,13 @@ if ($mode === 'legacy' || $modx->getOption('ueb_transport', null, 'adaptive') ==
     exit;
 }
 
+// poll transport never holds a worker: a stale cached client that still asks
+// for a stream gets an empty answer.
+if ($mode === 'stream' && $modx->getOption('ueb_transport', null, 'adaptive') === 'poll') {
+    http_response_code(204);
+    exit;
+}
+
 // The stream must never block cart, checkout or another AJAX request that uses
 // the same MODX/PHP session.
 if (session_status() === PHP_SESSION_ACTIVE) {
