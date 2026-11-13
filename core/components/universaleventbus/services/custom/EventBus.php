@@ -232,6 +232,43 @@ class EventBus
     }
 
     /**
+     * Убирает из $modx->jscripts / $modx->loadedjscripts блоки UEB, пришедшие из кэша ресурса:
+     * `window.uebConfig = ...` и тег модуля (адрес — по ueb_frontend_js без `?v=`).
+     * Чужие скрипты не трогает.
+     */
+    protected function removeCachedScripts(string $indexJS): void
+    {
+        $configMarker = 'window.uebConfig =';
+        $moduleBase = $indexJS !== '' ? explode('?', $indexJS, 2)[0] : '';
+        $isOurs = static function ($src) use ($configMarker, $moduleBase) {
+            if (!is_string($src)) {
+                return false;
+            }
+            if (strpos($src, $configMarker) !== false) {
+                return true;
+            }
+            return $moduleBase !== '' && strpos($src, '<script type="module" src="' . $moduleBase) !== false;
+        };
+
+        if (!empty($this->modx->jscripts) && is_array($this->modx->jscripts)) {
+            $kept = array_filter($this->modx->jscripts, static function ($src) use ($isOurs) {
+                return !$isOurs($src);
+            });
+            if (count($kept) !== count($this->modx->jscripts)) {
+                // regClientScript пишет в jscripts[count()] — индексы должны быть последовательными
+                $this->modx->jscripts = array_values($kept);
+            }
+        }
+        if (!empty($this->modx->loadedjscripts) && is_array($this->modx->loadedjscripts)) {
+            foreach (array_keys($this->modx->loadedjscripts) as $src) {
+                if ($isOurs($src)) {
+                    unset($this->modx->loadedjscripts[$src]);
+                }
+            }
+        }
+    }
+
+    /**
      * @param int $templateId
      * @return void
      */
@@ -269,6 +306,10 @@ class EventBus
             'webConfig' => $this->webConfig,
             'object' => $this
         ]);
+
+        // Страница из кэша ресурса приносит с собой снимок блоков UEB (jscripts кэшируются) —
+        // убираем его, чтобы остались только свежие конфиг (pageId, startCursor) и тег модуля.
+        $this->removeCachedScripts((string) $indexJS);
 
         $webConfig = json_encode($this->webConfig, JSON_UNESCAPED_UNICODE);
         if ($indexJS) {
