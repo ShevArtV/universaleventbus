@@ -416,3 +416,46 @@ test('immediate (default): leader opens the stream at once', async () => {
   transport.setLeader(true);
   assert.equal(transport.state, 'active_sse');
 });
+
+test('lazy: readOnce reads the cursor again without a stream or timers', async () => {
+  const {transport, timers, fetchCalls} = createTransport(lazyCfg());
+  transport.setLeader(true);
+  await flush();
+  await transport.readOnce();
+  assert.equal(fetchCalls.length, 2);
+  assert.match(fetchCalls[1], /mode=poll/);
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.deepEqual(timers.delays(), []);
+});
+
+test('lazy: readOnce during a read — one more read after it, no stream', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  const {transport} = createTransport({
+    config: {transportStart: 'lazy'},
+    fetch: async () => {
+      calls++;
+      if (calls === 1) await gate;
+      return {ok: true, status: 200, json: async () => ({success: true, cursor: 0, events: []})};
+    },
+  });
+  transport.setLeader(true);
+  transport.readOnce().then();
+  release();
+  for (let i = 0; i < 8; i++) await flush();
+  assert.equal(calls, 2);
+  assert.equal(FakeEventSource.instances.length, 0);
+});
+
+test('lazy: readOnce does nothing for a follower and after arming', async () => {
+  const {transport, fetchCalls} = createTransport(lazyCfg());
+  await transport.readOnce();
+  assert.equal(fetchCalls.length, 0);
+  transport.setLeader(true);
+  transport.notifyActivity();
+  await flush();
+  const before = fetchCalls.length;
+  await transport.readOnce();
+  assert.equal(fetchCalls.length, before);
+});

@@ -63,6 +63,19 @@ class EventBus {
     }
   }
 
+  // Lazy, before the first gesture: server answers to page events (show) are read by one
+  // cursor request; several events in a row share it.
+  scheduleRead() {
+    window.clearTimeout(this.readTimer);
+    this.readTimer = window.setTimeout(() => {
+      if (this.transport) {
+        this.transport.readOnce().then();
+      } else {
+        this.pending.read = true;
+      }
+    }, 300);
+  }
+
   // Loads the transport module once and applies what was told to the bus meanwhile.
   loadTransport() {
     if (!this.transportLoading) {
@@ -74,6 +87,9 @@ class EventBus {
         this.transport.setLeader(this.pending.leader);
         if (this.pending.catchUp) {
           this.transport.catchUp().then();
+        }
+        if (this.pending.read) {
+          this.transport.readOnce().then();
         }
         if (this.pending.activity) {
           this.transport.notifyActivity();
@@ -357,7 +373,7 @@ class EventBus {
 
   sendHideShowEvent(target, type = 'show') {
     if (!target) return;
-    this.sendEvent(target).then(() => {
+    this.sendEvent(target, {}, true).then(() => {
       (target.dataset[this.config.onceKey] !== '1') && target.setAttribute(this.config.eventAttr, type);
     });
   }
@@ -373,6 +389,7 @@ class EventBus {
   }
 
   notifyActivity() {
+    this.gestured = true;
     if (this.broadcastChannel) {
       this.broadcastChannel.takeLead();
     }
@@ -384,8 +401,14 @@ class EventBus {
     }
   }
 
-  async sendEvent(target, paramsObj = {}) {
-    this.notifyActivity();
+  // passive: sent by the page itself (show/hide by IntersectionObserver), not by the user.
+  // In lazy mode before the first user gesture it must not wake the stream: the answer is
+  // read by one cursor request (see scheduleRead).
+  async sendEvent(target, paramsObj = {}, passive = false) {
+    const deferRead = passive && this.lazyTransport && !this.gestured;
+    if (!deferRead) {
+      this.notifyActivity();
+    }
     if (this.broadcastChannel) {
       paramsObj.uebTabKey = this.broadcastChannel.tabKey;
     }
@@ -437,6 +460,9 @@ class EventBus {
     const response = await fetch(this.config.actionUrl, fetchOptions);
 
     const result = await response.json();
+    if (deferRead) {
+      this.scheduleRead();
+    }
     if (result.success && target !== document && target.dataset[this.config.onceKey]) {
       target.removeAttribute(this.config.eventAttr);
     }

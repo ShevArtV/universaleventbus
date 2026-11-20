@@ -1,3 +1,13 @@
+1.4.6-rc
+==============
+- FIX: ueb_transport_start=lazy — пассивные события страницы (data-ueb-event="show"/"hide" от
+  IntersectionObserver) считались действием пользователя: sendEvent() будил транспорт, и на листинге
+  без единого жеста открывался SSE-поток (с переподключениями). Теперь sendEvent(target, params, passive)
+  для show/hide в lazy до первого жеста не вызывает notifyActivity(); ответы забирает один
+  cursor-запрос mode=poll (readOnce с группировкой 300 мс; запрос во время чтения повторяется один раз).
+  После первого жеста (pointerdown/keydown/focus или событие пользователя) поведение прежнее.
+  Режимы immediate и transport=legacy не изменились.
+
 1.4.5-rc
 ==============
 - FIX: ueb_transport_start=lazy — до загрузки adaptive-transport.js лидер вкладки открывал устаревший

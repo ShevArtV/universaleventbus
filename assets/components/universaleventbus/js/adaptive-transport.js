@@ -93,13 +93,28 @@ export default class AdaptiveTransport {
   }
 
   async pollOnce() {
-    if (this.pollOncePromise || this.polling) return;
+    if (this.pollOncePromise || this.polling) {
+      // Events published while a read is in flight may miss it: read once more after it.
+      this.readAgain = true;
+      return;
+    }
     this.polling = true;
     this.pollOncePromise = this.readCursorEvents().finally(() => {
       this.polling = false;
       this.pollOncePromise = null;
+      if (this.readAgain) {
+        this.readAgain = false;
+        if (!this.armed) this.pollOnce();
+      }
     });
     await this.pollOncePromise;
+  }
+
+  // Lazy start, no gesture yet: one more cursor read for events the page sent itself (show).
+  // Once armed, the stream or the polling loop delivers them.
+  async readOnce() {
+    if (this.armed || !this.isLeader || !this.isVisible) return;
+    await this.pollOnce();
   }
 
   enterActive() {
