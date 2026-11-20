@@ -292,6 +292,7 @@ class EventBus
             'handlerPath' => $this->modx->getOption('ueb_sse_handler_path', '', '/assets/components/universaleventbus/php/ssehandler.php'),
             'actionUrl' => $this->modx->getOption('ueb_action_url', '', '/assets/components/universaleventbus/php/action.php'),
             'transport' => $this->modx->getOption('ueb_transport', null, 'adaptive'),
+            'transportStart' => $this->modx->getOption('ueb_transport_start', null, 'immediate') === 'lazy' ? 'lazy' : 'immediate',
             'streamIdleTimeout' => (int) $this->modx->getOption('ueb_stream_idle_timeout', null, 30000),
             'cursorPollInitial' => (int) $this->modx->getOption('ueb_cursor_poll_initial', null, 2000),
             'cursorPollMax' => (int) $this->modx->getOption('ueb_cursor_poll_max', null, 30000),

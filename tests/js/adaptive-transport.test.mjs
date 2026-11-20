@@ -314,3 +314,105 @@ test('poll mode: pause clears all timers', async () => {
   assert.deepEqual(timers.delays(), []);
   assert.equal(transport.state, 'paused');
 });
+
+// ---- transportStart=lazy: one read before the first action, stream only after it ----
+
+const lazyCfg = (extra = {}) => ({config: Object.assign({transportStart: 'lazy'}, extra)});
+
+test('lazy: leader reads the cursor once, opens no stream, schedules nothing', async () => {
+  const {transport, timers, events, fetchCalls} = createTransport(Object.assign(lazyCfg(), {
+    responses: [eventResponse(5)],
+  }));
+  transport.setLeader(true);
+  await flush();
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0], /mode=poll/);
+  assert.equal(events.length, 1);
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.deepEqual(timers.delays(), []);
+  assert.equal(transport.state, 'lazy_wait');
+});
+
+test('lazy: empty answer — still no stream and no timers', async () => {
+  const {transport, timers, fetchCalls} = createTransport(lazyCfg());
+  transport.setLeader(true);
+  await flush();
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.deepEqual(timers.delays(), []);
+});
+
+test('lazy: follower does not read and does not open a stream', async () => {
+  const {transport, fetchCalls} = createTransport(lazyCfg());
+  transport.setLeader(false);
+  await flush();
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(FakeEventSource.instances.length, 0);
+});
+
+test('lazy: hidden tab reads nothing until it becomes visible', async () => {
+  const {transport, fetchCalls} = createTransport(lazyCfg());
+  transport.setVisible(false);
+  transport.setLeader(true);
+  await flush();
+  assert.equal(fetchCalls.length, 0);
+  transport.setVisible(true);
+  await flush();
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(FakeEventSource.instances.length, 0);
+});
+
+test('lazy: first activity opens the stream', async () => {
+  const {transport} = createTransport(lazyCfg());
+  transport.setLeader(true);
+  await flush();
+  transport.notifyActivity();
+  await flush();
+  assert.equal(transport.state, 'active_sse');
+  assert.equal(FakeEventSource.instances.length, 1);
+});
+
+test('lazy: activity during the read — stream opens after it, event is delivered once', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const {transport, events} = createTransport({
+    config: {transportStart: 'lazy'},
+    fetch: async () => {
+      await gate;
+      return {ok: true, status: 200, json: async () => ({success: true, cursor: 7, events: [{cursor: 7, data: {eventId: 'a'}}]})};
+    },
+  });
+  transport.setLeader(true);
+  transport.notifyActivity();
+  assert.equal(FakeEventSource.instances.length, 0);
+  release();
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(events.length, 1);
+  assert.equal(FakeEventSource.instances.length, 1);
+  assert.match(FakeEventSource.instances[0].url, /cursor=7/);
+});
+
+test('lazy: activity of a non-leader tab arms the transport for a later lead', async () => {
+  const {transport} = createTransport(lazyCfg());
+  transport.notifyActivity();
+  transport.setLeader(true);
+  assert.equal(transport.state, 'active_sse');
+});
+
+test('lazy + poll mode: first activity opens the polling window, never a stream', async () => {
+  const {transport, fetchCalls} = createTransport(lazyCfg({transport: 'poll'}));
+  transport.setLeader(true);
+  await flush();
+  assert.equal(fetchCalls.length, 1);
+  transport.notifyActivity();
+  await flush();
+  assert.equal(transport.state, 'active_poll');
+  assert.equal(FakeEventSource.instances.length, 0);
+  assert.equal(fetchCalls.length, 2);
+});
+
+test('immediate (default): leader opens the stream at once', async () => {
+  const {transport} = createTransport();
+  transport.setLeader(true);
+  assert.equal(transport.state, 'active_sse');
+});

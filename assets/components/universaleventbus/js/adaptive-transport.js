@@ -35,6 +35,11 @@ export default class AdaptiveTransport {
     // poll-only: no SSE at all, delivery only by cursor polling.
     this.pollOnly = this.config.transport === 'poll';
     this.polling = false;
+    // lazy start: no stream and no polling loop until the first user action;
+    // before it the page gets one cursor read (pollOnce) with its render events.
+    this.lazyStart = this.config.transportStart === 'lazy';
+    this.armed = !this.lazyStart;
+    this.pollOncePromise = null;
   }
 
   setLeader(isLeader) {
@@ -60,13 +65,41 @@ export default class AdaptiveTransport {
   }
 
   notifyActivity() {
+    const wasArmed = this.armed;
+    this.armed = true;
     if (!this.isLeader || !this.isVisible) return;
+    if (!wasArmed && this.pollOncePromise) {
+      // The stream opens after the one-shot read finishes: same cursor, no duplicates.
+      this.pollOncePromise.then(() => this.enterActive());
+      return;
+    }
     this.enterActive();
   }
 
   activate() {
     this.pollDelay = this.toPositiveInt(this.config.cursorPollInitial, 2000);
+    if (!this.armed) {
+      this.enterLazyWait();
+      return;
+    }
     this.enterActive();
+  }
+
+  // Lazy start before the first user action: one read, no stream, no timers.
+  enterLazyWait() {
+    if (!this.isLeader || !this.isVisible) return;
+    this.setState('lazy_wait');
+    this.pollOnce();
+  }
+
+  async pollOnce() {
+    if (this.pollOncePromise || this.polling) return;
+    this.polling = true;
+    this.pollOncePromise = this.readCursorEvents().finally(() => {
+      this.polling = false;
+      this.pollOncePromise = null;
+    });
+    await this.pollOncePromise;
   }
 
   enterActive() {
@@ -200,14 +233,7 @@ export default class AdaptiveTransport {
       if (!response.ok) {
         throw new Error(`Cursor poll failed with HTTP ${response.status}`);
       }
-      const result = await response.json();
-      const events = Array.isArray(result.events) ? result.events : [];
-      for (const event of events) {
-        const cursor = this.toPositiveInt(event.cursor, this.cursor);
-        this.acceptEvent(event.data, cursor);
-        hasEvents = true;
-      }
-      this.setCursor(result.cursor);
+      hasEvents = this.acceptPollResult(await response.json());
     } catch {
       hasEvents = false;
     } finally {
@@ -239,6 +265,33 @@ export default class AdaptiveTransport {
     const factor = Number(this.config.cursorPollFactor) > 1 ? Number(this.config.cursorPollFactor) : 2;
     this.pollDelay = Math.min(maxDelay, Math.round(this.pollDelay * factor));
     this.schedulePoll(this.pollDelay);
+  }
+
+  // Hands the events of a cursor answer to the page. true if there were any.
+  acceptPollResult(result) {
+    const events = Array.isArray(result.events) ? result.events : [];
+    let hasEvents = false;
+    for (const event of events) {
+      const cursor = this.toPositiveInt(event.cursor, this.cursor);
+      this.acceptEvent(event.data, cursor);
+      hasEvents = true;
+    }
+    this.setCursor(result.cursor);
+    return hasEvents;
+  }
+
+  async readCursorEvents() {
+    try {
+      const response = await this.fetchFn(this.buildUrl('poll'), {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) return false;
+      return this.acceptPollResult(await response.json());
+    } catch {
+      return false;
+    }
   }
 
   /**

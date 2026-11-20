@@ -26,14 +26,63 @@ class EventBus {
     this.config = Object.assign(this.config, window.uebConfig);
     window.EventBus = this;
     this.receivedEventIds = new Map();
-    this.transport = this.config.transport === 'legacy'
-      ? null
-      : new AdaptiveTransport(this.config, {
-        onEvent: (data, cursor) => this.receiveTransportEvent(data, cursor, true),
-        onReplay: (data, cursor) => this.receiveTransportEvent(data, cursor, false, true),
-      });
+    this.transport = null;
+    // lazy: adaptive-transport.js is loaded after the page load (or at the first user
+    // action); what the bus is told before that (leader, visibility, catch-up) waits here.
+    this.lazyTransport = this.config.transport !== 'legacy' && this.config.transportStart === 'lazy';
+    this.pending = {leader: false, visible: !document.hidden, catchUp: false};
+    if (this.config.transport !== 'legacy' && !this.lazyTransport) {
+      this.transport = this.createTransport();
+    }
     this.broadcastChannel = new UebBroadcastChannel(this);
     this.initialize();
+    if (this.lazyTransport) {
+      this.scheduleTransportLoad();
+    }
+  }
+
+  createTransport() {
+    return new AdaptiveTransport(this.config, {
+      onEvent: (data, cursor) => this.receiveTransportEvent(data, cursor, true),
+      onReplay: (data, cursor) => this.receiveTransportEvent(data, cursor, false, true),
+    });
+  }
+
+  scheduleTransportLoad() {
+    const run = () => {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(() => this.loadTransport(), {timeout: 2000});
+      } else {
+        window.setTimeout(() => this.loadTransport(), 1000);
+      }
+    };
+    if (document.readyState === 'complete') {
+      run();
+    } else {
+      window.addEventListener('load', run, {once: true});
+    }
+  }
+
+  // Loads the transport module once and applies what was told to the bus meanwhile.
+  loadTransport() {
+    if (!this.transportLoading) {
+      this.transportLoading = import(`./adaptive-transport.js${version}`).then((module) => {
+        AdaptiveTransport = module.default;
+        this.transport = this.createTransport();
+        this.transport.setVisible(this.pending.visible);
+        this.transport.setLeader(this.pending.leader);
+        if (this.pending.catchUp) {
+          this.transport.catchUp().then();
+        }
+        if (this.pending.activity) {
+          this.transport.notifyActivity();
+        }
+      }).catch((error) => {
+        this.transportLoading = null;
+        console.error('[UniversalEventBus] the transport did not load', error);
+      });
+    }
+    return this.transportLoading;
   }
 
   initialize() {
@@ -52,6 +101,7 @@ class EventBus {
   }
 
   setTransportLeader(isLeader) {
+    this.pending.leader = Boolean(isLeader);
     if (this.transport) {
       this.transport.setLeader(isLeader);
       return;
@@ -64,6 +114,7 @@ class EventBus {
   }
 
   setTransportVisible(isVisible) {
+    this.pending.visible = Boolean(isVisible);
     if (this.transport) {
       this.transport.setVisible(isVisible);
       return;
@@ -76,6 +127,8 @@ class EventBus {
   catchUp() {
     if (this.transport) {
       this.transport.catchUp().then();
+    } else if (this.lazyTransport) {
+      this.pending.catchUp = true;
     }
   }
 
@@ -321,6 +374,9 @@ class EventBus {
     }
     if (this.transport) {
       this.transport.notifyActivity();
+    } else if (this.lazyTransport) {
+      this.pending.activity = true;
+      this.loadTransport();
     }
   }
 
@@ -452,9 +508,14 @@ const domReady = new Promise((resolve) => {
   }
 });
 
+// With transportStart=lazy the transport module is not requested here: EventBus loads it
+// after the page load or at the first user action.
+const lazyStart = window.uebConfig && window.uebConfig.transportStart === 'lazy'
+  && window.uebConfig.transport !== 'legacy';
+
 Promise.all([
   import(`./broadcastchannel.js${version}`),
-  import(`./adaptive-transport.js${version}`),
+  lazyStart ? Promise.resolve({}) : import(`./adaptive-transport.js${version}`),
   domReady,
 ]).then(([broadcastChannelModule, adaptiveTransportModule]) => {
   UebBroadcastChannel = broadcastChannelModule.default;
