@@ -68,10 +68,10 @@ class EventBus {
   scheduleRead() {
     window.clearTimeout(this.readTimer);
     this.readTimer = window.setTimeout(() => {
+      // Before the transport loads nothing is needed: its first read (on becoming the leader)
+      // happens after these events are already stored.
       if (this.transport) {
         this.transport.readOnce().then();
-      } else {
-        this.pending.read = true;
       }
     }, 300);
   }
@@ -87,9 +87,6 @@ class EventBus {
         this.transport.setLeader(this.pending.leader);
         if (this.pending.catchUp) {
           this.transport.catchUp().then();
-        }
-        if (this.pending.read) {
-          this.transport.readOnce().then();
         }
         if (this.pending.activity) {
           this.transport.notifyActivity();
