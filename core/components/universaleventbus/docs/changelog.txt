@@ -1,3 +1,11 @@
+1.4.5-rc
+==============
+- FIX: ueb_transport_start=lazy — до загрузки adaptive-transport.js лидер вкладки открывал устаревший
+  EventSource (ssehandler.php?mode=legacy) через setTransportLeader(), то есть поток открывался на
+  загрузке страницы вопреки режиму lazy. Теперь в lazy флаг лидера ждёт в pending и применяется при
+  создании транспорта; на всякий случай loadTransport() закрывает legacy-поток. Режимы immediate и
+  transport=legacy не изменились.
+
 1.4.4-rc
 ==============
 - FEATURE: новая системная настройка ueb_transport_start (immediate | lazy, по умолчанию immediate —

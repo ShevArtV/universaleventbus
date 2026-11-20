@@ -68,6 +68,7 @@ class EventBus {
     if (!this.transportLoading) {
       this.transportLoading = import(`./adaptive-transport.js${version}`).then((module) => {
         AdaptiveTransport = module.default;
+        this.closeLegacyEventSource();
         this.transport = this.createTransport();
         this.transport.setVisible(this.pending.visible);
         this.transport.setLeader(this.pending.leader);
@@ -106,6 +107,9 @@ class EventBus {
       this.transport.setLeader(isLeader);
       return;
     }
+    // lazy: the transport is not loaded yet, the leader flag waits in this.pending and is
+    // applied by loadTransport(); the legacy EventSource must not open here.
+    if (this.lazyTransport) return;
     if (isLeader && !document.hidden) {
       this.initializeLegacyEventSource();
     } else {
